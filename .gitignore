@@ -1,8 +1,9 @@
-# --- user data: local SQLite DB (regenerate with seed_dummy.py) ---
-*.db
+# --- sqlite temp files (never commit these) ---
 *.db-journal
 *.db-wal
 *.db-shm
+
+# NOTE: expenses.db (the data file) IS versioned in git per project choice.
 
 # --- python ---
 __pycache__/

@@ -114,13 +114,14 @@ On first launch the app creates `expenses.db` next to the script (or beside the 
 | Area | Details |
 |---|---|
 | ➕➖ **CRUD transactions** | Add / Edit (double-click) / Delete Income & Expense with date, category, amount, note |
+| 🔁 **Recurring** | Create **Daily/Weekly/Monthly/Yearly** schedules (Rent, Salary, Subscriptions) — auto-generates on startup + on demand, **Preview next 5**, pause/resume, edit/delete |
 | 🗂 **Categories** | Separate Income & Expense lists, quick add/delete/rename, plus **Category Manager** window (search, filter, usage counts, full CRUD with retag) |
-| 🔍 **Transactions tab** | Filter by date range, type, category, text search; live totals (`Income • Expense • Balance`); striped rows; **Export CSV** |
-| 📊 **Dashboard** | Modern card metrics (Income / Expense / Balance / Savings %) with accent top border + icon badge, recent 10, bar chart by category |
+| 🔍 **Transactions tab** | Filter by date range, type, category, text search; live totals (`Income • Expense • Balance`); striped rows; **Export CSV** + **⬆ Import CSV** (bank CSV, auto-detect columns, multi-date/amount formats, **auto-categorize**, dedup) |
+| 📊 **Dashboard** | Modern card metrics (Income / Expense / Balance / Savings %) with accent top border + icon badge, recent 10, **donut pie by category** (was bar) |
 | 📅 **Daily report** | Pick date (Prev/Next/Today), shows count + totals |
-| 🗓 **Monthly report** | Year/month picker, day-wise Income/Expense/Balance table, category breakdown + chart, **Export Month CSV** |
+| 🗓 **Monthly report** | Year/month picker, day-wise Income/Expense/Balance table, **category breakdown donut pie** (was bar) + chart, **Export Month CSV** |
 | 📈 **Graphs** | Category **donut pie** with % + legend (Income/Expense toggle), daily **trend** area-line (Income #059669 vs Expense #DC2626), **yearly grouped bars** (12 months) |
-| 💾 **Standalone DB** | `expenses.db` — WAL mode, auto-migrates `category_id` FK, `VACUUM` via **🔧 DB Tools** (integrity check, backup) |
+| 💾 **Standalone DB** | `expenses.db` — WAL mode, auto-migrates `category_id` FK + `recurring_transactions`, `VACUUM` via **🔧 DB Tools** (integrity check, backup) |
 | 🎨 **Polished UI** | Light theme `#F1F5F9` app bg, white cards `#FFFFFF` + `#E2E8F0` border, `TNotebook` pill tabs, striped `Treeview` 30px rows, pill legends |
 
 ---
@@ -154,6 +155,34 @@ This will:
 pip install pyinstaller
 pyinstaller --onefile --windowed --name ExpenseTracker expense_tracker.py
 # or with pipx: pipx run pyinstaller --onefile --windowed --name ExpenseTracker expense_tracker.py
+```
+
+---
+
+## ⬆️ CSV Import (Bank Statements)
+
+**Transactions tab → `⬆ Import CSV`**
+
+1. Click **Browse…** → select your bank CSV (comma/semicolon/tab auto-detected, `utf-8-sig`).
+2. Preview first 6 rows + auto-detected column mapping (Date / Amount / Type / Category / Note). Adjust via dropdowns (`Auto` = guess from header).
+3. Check **First row is header** if needed. Click **Import**.
+
+**What it handles:**
+- **Date:** `YYYY-MM-DD`, `MM/DD/YYYY`, `DD/MM/YYYY`, `DD-Mon-YYYY`, `+ time`, `ISO` etc. → normalized to `YYYY-MM-DD`
+- **Amount:** `1,200.50`, `$ -45.00`, `(45.00)`, `1.234,56` → `float`; sign → `Type` if Type column missing
+- **Type:** `Income`/`Expense`, `CR`/`DR`, `Credit`/`Debit`, or empty → inferred from amount sign + `auto_categorize` keywords (e.g. `NETFLIX` → `Expense/Entertainment`)
+- **Category:** if empty → `auto_categorize(note, type)` via keywords (`WALMART→Groceries`, `UBER→Transport`, `SALARY→Salary`…), else `Other Expense/Other Income`; creates missing categories automatically
+- **Note:** `Description`/`Memo`/`Details` fallback
+- **Dedup:** skips exact `date+type+category+amount+note` already in DB
+- **Result:** popup `Total / Imported / Skipped` + refreshes Dashboard/Transactions
+
+Example bank CSV:
+```csv
+Date,Description,Amount,Type
+2026-09-10,WALMART GROCERY,45.50,Expense
+2026-09-11,SALARY,2000,Income
+09/12/2026,UBER TRIP,-30.00,
+2026-09-13,NETFLIX,15.99,
 ```
 
 ---

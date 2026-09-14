@@ -5,12 +5,13 @@ Standalone desktop app (like MS Access .accdb, but using SQLite .db single file)
 No server needed. Just run:  python expense_tracker.py
 
 Features:
-- CRUD for Income / Expense transactions
+- CRUD for Income / Expense transactions + CSV Import (bank CSV, auto-categorize, dedup)
+- Recurring transactions (Daily/Weekly/Monthly/Yearly) — auto-generates Rent/Salary etc.
 - Category management (separate Income & Expense categories)
-- Dashboard with monthly summary
-- Daily report + Monthly report with charts + CSV export
-- Graphs tab: category pie chart, monthly trend line, yearly bar chart
-- Search / filter, SQLite standalone database file (expenses.db)
+- Dashboard with monthly summary + donut pie by category
+- Daily report + Monthly report (donut pie) with charts + CSV export
+- Graphs tab: category donut pie, monthly trend area-line, yearly grouped bars
+- Search / filter, SQLite standalone database file (expenses.db) with WAL
 Stdlib only: tkinter + sqlite3 + csv (no pip install needed).
 """
 
@@ -18,6 +19,7 @@ import csv
 import calendar
 import contextlib
 import os
+import re
 import sqlite3
 from datetime import date, datetime, timedelta
 import tkinter as tk
@@ -111,6 +113,27 @@ def init_db():
         """)
         cur.execute("CREATE INDEX IF NOT EXISTS idx_txn_date ON transactions(date)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_txn_type ON transactions(type)")
+        # --- recurring transactions (auto-generate rent/salary etc.) -----
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS recurring_transactions (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                type          TEXT NOT NULL CHECK(type IN ('Income','Expense')),
+                category      TEXT NOT NULL,
+                category_id   INTEGER REFERENCES categories(id) ON UPDATE CASCADE ON DELETE SET NULL,
+                amount        REAL NOT NULL CHECK(amount > 0),
+                note          TEXT DEFAULT '',
+                frequency     TEXT NOT NULL CHECK(frequency IN ('Daily','Weekly','Monthly','Yearly')),
+                start_date    TEXT NOT NULL,
+                end_date      TEXT,
+                next_due      TEXT NOT NULL,
+                active        INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),
+                last_generated TEXT
+            )
+        """)
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_rec_next_due ON recurring_transactions(next_due)"
+        )
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_rec_active ON recurring_transactions(active)")
         # --- migration: add category_id FK column (non-breaking) ---------
         if not _txn_has_category_id(cur):
             cur.execute(
@@ -460,16 +483,408 @@ def db_update_category(cat_id, new_name, new_type, update_txns=True):
             return False, str(e)
 
 
+# ---- Recurring helpers ----------------------------------------------------
+def _calc_next_due(current_due_str, frequency):
+    """Given YYYY-MM-DD and frequency, return next due YYYY-MM-DD."""
+    d = datetime.strptime(current_due_str, "%Y-%m-%d").date()
+    if frequency == "Daily":
+        nxt = d + timedelta(days=1)
+    elif frequency == "Weekly":
+        nxt = d + timedelta(days=7)
+    elif frequency == "Monthly":
+        # next month, same day or last day of month if overflow
+        y, m = d.year, d.month + 1
+        if m > 12:
+            m, y = 1, y + 1
+        last = calendar.monthrange(y, m)[1]
+        nxt = date(y, m, min(d.day, last))
+    elif frequency == "Yearly":
+        try:
+            nxt = date(d.year + 1, d.month, d.day)
+        except ValueError:
+            # Feb 29 -> Feb 28
+            nxt = date(d.year + 1, d.month, 28)
+    else:
+        raise ValueError(f"Unknown frequency: {frequency}")
+    return nxt.isoformat()
+
+
+def db_add_recurring(
+    txn_type, category, amount, note, frequency, start_date, end_date=None, active=True
+):
+    _validate_date(start_date)
+    if end_date:
+        _validate_date(end_date)
+        if end_date < start_date:
+            raise ValueError("end_date cannot be before start_date")
+    if txn_type not in ("Income", "Expense"):
+        raise ValueError("type must be Income or Expense")
+    if frequency not in ("Daily", "Weekly", "Monthly", "Yearly"):
+        raise ValueError("frequency must be Daily/Weekly/Monthly/Yearly")
+    if float(amount) <= 0:
+        raise ValueError("amount must be > 0")
+    category = category.strip()
+    if not category:
+        raise ValueError("category required")
+    with contextlib.closing(get_conn()) as conn:
+        cur = conn.cursor()
+        cur.execute("BEGIN")
+        try:
+            cid = _get_category_id(cur, category, txn_type)
+            cur.execute(
+                """INSERT INTO recurring_transactions
+                   (type, category, category_id, amount, note, frequency, start_date, end_date, next_due, active)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    txn_type,
+                    category,
+                    cid,
+                    float(amount),
+                    note.strip(),
+                    frequency,
+                    start_date,
+                    end_date,
+                    start_date,
+                    1 if active else 0,
+                ),
+            )
+            conn.commit()
+            return cur.lastrowid
+        except Exception:
+            conn.rollback()
+            raise
+
+
+def db_update_recurring(
+    rec_id, txn_type, category, amount, note, frequency, start_date, end_date, active
+):
+    _validate_date(start_date)
+    if end_date:
+        _validate_date(end_date)
+    with contextlib.closing(get_conn()) as conn:
+        cur = conn.cursor()
+        cur.execute("BEGIN")
+        try:
+            # preserve next_due logic: if start_date changed and next_due was old start, update next_due
+            old = cur.execute(
+                "SELECT start_date, next_due, last_generated FROM recurring_transactions WHERE id=?",
+                (rec_id,),
+            ).fetchone()
+            if not old:
+                conn.rollback()
+                return False, "Recurring not found"
+            old_start, old_next, last_gen = old
+            # if user changed start and next_due still equals old_start (and never generated), move next_due
+            new_next = old_next
+            if start_date != old_start and (last_gen is None and old_next == old_start):
+                new_next = start_date
+                _validate_date(new_next)
+            cid = _get_category_id(cur, category, txn_type)
+            cur.execute(
+                """UPDATE recurring_transactions SET
+                   type=?, category=?, category_id=?, amount=?, note=?, frequency=?,
+                   start_date=?, end_date=?, next_due=?, active=?
+                   WHERE id=?""",
+                (
+                    txn_type,
+                    category.strip(),
+                    cid,
+                    float(amount),
+                    note.strip(),
+                    frequency,
+                    start_date,
+                    end_date,
+                    new_next,
+                    1 if active else 0,
+                    rec_id,
+                ),
+            )
+            conn.commit()
+            return True, ""
+        except Exception as e:
+            conn.rollback()
+            return False, str(e)
+
+
+def db_delete_recurring(rec_id):
+    with contextlib.closing(get_conn()) as conn:
+        conn.execute("BEGIN")
+        try:
+            conn.execute("DELETE FROM recurring_transactions WHERE id=?", (rec_id,))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+
+
+def db_get_recurrings(active_only=False):
+    with contextlib.closing(get_conn()) as conn:
+        q = "SELECT id, type, category, amount, note, frequency, start_date, end_date, next_due, active, last_generated FROM recurring_transactions"
+        if active_only:
+            q += " WHERE active=1"
+        q += " ORDER BY next_due ASC, id ASC"
+        rows = conn.execute(q).fetchall()
+        return rows
+
+
+def db_generate_due_recurrings(today_str=None):
+    """Generate transactions for all due recurrings up to today.
+    Returns (n_generated, [(rec_id, txn_date), ...])."""
+    if today_str is None:
+        today_str = date.today().isoformat()
+    _validate_date(today_str)
+    today = datetime.strptime(today_str, "%Y-%m-%d").date()
+    generated = []
+    with contextlib.closing(get_conn()) as conn:
+        cur = conn.cursor()
+        cur.execute("BEGIN")
+        try:
+            due = cur.execute(
+                "SELECT id, type, category, category_id, amount, note, frequency, next_due, end_date FROM recurring_transactions WHERE active=1 AND next_due <= ? ORDER BY next_due",
+                (today_str,),
+            ).fetchall()
+            for rec_id, rtype, cat, cid, amt, note, freq, next_due, end_date in due:
+                # generate for each due occurrence up to today (handles missed weeks)
+                cur_due = next_due
+                while True:
+                    _validate_date(cur_due)
+                    cur_d = datetime.strptime(cur_due, "%Y-%m-%d").date()
+                    if cur_d > today:
+                        break
+                    if end_date and cur_due > end_date:
+                        # deactivate if past end
+                        cur.execute(
+                            "UPDATE recurring_transactions SET active=0 WHERE id=?", (rec_id,)
+                        )
+                        break
+                    # insert transaction
+                    # refresh cid in case category renamed
+                    fresh_cid = _get_category_id(cur, cat, rtype)
+                    cur.execute(
+                        "INSERT INTO transactions(date, type, category, category_id, amount, note) VALUES(?,?,?,?,?,?)",
+                        (cur_due, rtype, cat, fresh_cid, amt, note),
+                    )
+                    generated.append((rec_id, cur_due))
+                    # update recurring
+                    last_gen = cur_due
+                    nxt = _calc_next_due(cur_due, freq)
+                    # if next exceeds end_date, deactivate after this gen
+                    if end_date and nxt > end_date:
+                        cur.execute(
+                            "UPDATE recurring_transactions SET last_generated=?, next_due=?, active=0 WHERE id=?",
+                            (last_gen, nxt, rec_id),
+                        )
+                        break
+                    cur.execute(
+                        "UPDATE recurring_transactions SET last_generated=?, next_due=? WHERE id=?",
+                        (last_gen, nxt, rec_id),
+                    )
+                    # if we just generated for today, next is tomorrow+ etc, loop will break next iter
+                    cur_due = nxt
+                    # prevent infinite loop if freq broken
+                    if len(generated) > 1000:
+                        break
+                # end for each due
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+    return len(generated), generated
+
+
+# ---- CSV Import helpers -------------------------------------------------
+# Keyword → category for auto-categorize when CSV has no category column
+CATEGORY_KEYWORDS = {
+    "Income": {
+        "salary": "Salary",
+        "payroll": "Salary",
+        "freelance": "Freelance",
+        "client": "Freelance",
+        "business": "Business",
+        "interest": "Interest",
+        "dividend": "Interest",
+        "gift": "Gift Received",
+    },
+    "Expense": {
+        "grocery": "Groceries",
+        "walmart": "Groceries",
+        "aldi": "Groceries",
+        "whole foods": "Groceries",
+        "rent": "Rent",
+        "landlord": "Rent",
+        "uber": "Transport",
+        "lyft": "Transport",
+        "transport": "Transport",
+        "bus": "Transport",
+        "metro": "Transport",
+        "fuel": "Transport",
+        "gas station": "Transport",
+        "electric": "Utilities",
+        "water": "Utilities",
+        "utility": "Utilities",
+        "internet": "Utilities",
+        "restaurant": "Food",
+        "food": "Food",
+        "dinner": "Food",
+        "lunch": "Food",
+        "cafe": "Food",
+        "coffee": "Food",
+        "shopping": "Shopping",
+        "amazon": "Shopping",
+        "clothes": "Shopping",
+        "shoes": "Shopping",
+        "health": "Health",
+        "pharmacy": "Health",
+        "doctor": "Health",
+        "hospital": "Health",
+        "education": "Education",
+        "school": "Education",
+        "book": "Education",
+        "course": "Education",
+        "movie": "Entertainment",
+        "netflix": "Entertainment",
+        "spotify": "Entertainment",
+        "game": "Entertainment",
+        "saving": "Savings",
+        "investment": "Savings",
+    },
+}
+
+
+def auto_categorize(note, txn_type):
+    """Guess category from note using keywords; fallback to Other."""
+    if not note:
+        return "Other Income" if txn_type == "Income" else "Other Expense"
+    low = note.lower()
+    for kw, cat in CATEGORY_KEYWORDS.get(txn_type, {}).items():
+        if kw in low:
+            return cat
+    return "Other Income" if txn_type == "Income" else "Other Expense"
+
+
+def parse_amount_raw(raw):
+    """Parse amount like '1,200.50', '$ -45.00', '(45.00)' → float."""
+    if raw is None:
+        raise ValueError("empty amount")
+    s = str(raw).strip()
+    if not s:
+        raise ValueError("empty amount")
+    # handle parentheses as negative
+    neg = False
+    if s.startswith("(") and s.endswith(")"):
+        neg = True
+        s = s[1:-1]
+    # remove currency symbols and spaces
+    s = re.sub(r"[^0-9\.\-]", "", s)
+    if not s or s in (".", "-"):
+        raise ValueError(f"invalid amount: {raw!r}")
+    try:
+        amt = float(s)
+    except Exception:
+        raise ValueError(f"invalid amount: {raw!r}")
+    if neg:
+        amt = -abs(amt)
+    return abs(amt) if amt != 0 else 0  # caller decides sign via type
+
+
+def parse_date_raw(raw):
+    """Try multiple date formats → YYYY-MM-DD, else raise."""
+    if raw is None:
+        raise ValueError("empty date")
+    s = str(raw).strip()
+    if not s:
+        raise ValueError("empty date")
+    # normalize separators
+    s = s.strip()
+    fmts = [
+        "%Y-%m-%d",
+        "%Y/%m/%d",
+        "%Y.%m.%d",
+        "%m/%d/%Y",
+        "%m-%d-%Y",
+        "%m.%d.%Y",
+        "%d/%m/%Y",
+        "%d-%m-%Y",
+        "%d.%m.%Y",
+        "%d-%b-%Y",
+        "%d %b %Y",
+        "%b %d, %Y",
+        "%Y-%m-%d %H:%M:%S",
+        "%m/%d/%Y %H:%M",
+    ]
+    for fmt in fmts:
+        try:
+            d = datetime.strptime(s, fmt).date()
+            return d.isoformat()
+        except Exception:
+            continue
+    # try stripping time part
+    try:
+        # handle 2026-09-14T00:00:00
+        d = datetime.fromisoformat(s.split("T")[0].split(" ")[0]).date()
+        return d.isoformat()
+    except Exception:
+        pass
+    raise ValueError(f"unrecognized date: {raw!r}")
+
+
+def _detect_csv_columns(headers):
+    """Auto-detect mapping from header names (lower) → field."""
+    low = [h.strip().lower() for h in headers]
+    mapping = {}
+    # date
+    for i, h in enumerate(low):
+        if any(k in h for k in ["date", "time", "txn date", "transaction date"]):
+            mapping["date"] = i
+            break
+    # amount
+    for i, h in enumerate(low):
+        if any(k in h for k in ["amount", "amt", "value", "price", "total"]):
+            # avoid "amount" vs "balance" confusion
+            if "balance" not in h:
+                mapping["amount"] = i
+                break
+    # type
+    for i, h in enumerate(low):
+        if h in ["type", "txn type", "transaction type", "dr/cr", "debit/credit"]:
+            mapping["type"] = i
+            break
+    # category
+    for i, h in enumerate(low):
+        if "category" in h:
+            mapping["category"] = i
+            break
+    # note / description
+    for i, h in enumerate(low):
+        if any(
+            k in h
+            for k in [
+                "note",
+                "description",
+                "memo",
+                "details",
+                "narration",
+                "particulars",
+                "remark",
+            ]
+        ):
+            mapping["note"] = i
+            break
+    return mapping
+
+
 # ---------------------------------------------------------------- App UI
 class ExpenseApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Daily Expense Tracker")
-        self.geometry("1080x680")
-        self.minsize(960, 600)
+        self.geometry("1120x700")
+        self.minsize(980, 620)
         self._style()
         self._build_layout()
         self.refresh_all()
+        # auto-generate due recurring transactions
+        self.after(800, self._auto_generate_recurring)
 
     # -- styling ----------------------------------------------------------
     def _style(self):
@@ -845,17 +1260,20 @@ class ExpenseApp(tk.Tk):
 
         self.tab_dash = ttk.Frame(self.nb, padding=14)
         self.tab_txn = ttk.Frame(self.nb, padding=14)
+        self.tab_rec = ttk.Frame(self.nb, padding=14)
         self.tab_cat = ttk.Frame(self.nb, padding=14)
         self.tab_rep = ttk.Frame(self.nb, padding=14)
         self.tab_graph = ttk.Frame(self.nb, padding=14)
         self.nb.add(self.tab_dash, text="  📊  Dashboard  ")
         self.nb.add(self.tab_txn, text="  🧾  Transactions  ")
+        self.nb.add(self.tab_rec, text="  🔁  Recurring  ")
         self.nb.add(self.tab_cat, text="  🗂  Categories  ")
         self.nb.add(self.tab_rep, text="  📅  Reports  ")
         self.nb.add(self.tab_graph, text="  📈  Graphs  ")
 
         self._build_dashboard()
         self._build_transactions()
+        self._build_recurring()
         self._build_categories()
         self._build_reports()
         self._build_graphs()
@@ -1331,6 +1749,12 @@ class ExpenseApp(tk.Tk):
             style="Secondary.TButton",
             command=self.export_transactions_csv,
         ).pack(side="right")
+        ttk.Button(
+            btns,
+            text="⬆  Import CSV",
+            style="Secondary.TButton",
+            command=self.open_import_dialog,
+        ).pack(side="right", padx=6)
 
     def _clear_filters(self):
         t = date.today()
@@ -1418,6 +1842,405 @@ class ExpenseApp(tk.Tk):
             w.writerow(["ID", "Date", "Type", "Category", "Amount", "Note"])
             w.writerows(rows)
         messagebox.showinfo("Export", f"Exported {len(rows)} rows to:\n{path}")
+
+    def open_import_dialog(self):
+        dlg = tk.Toplevel(self)
+        dlg.title("Import CSV — Transactions")
+        dlg.geometry("760x540")
+        dlg.minsize(700, 480)
+        dlg.configure(bg="#F1F5F9")
+        dlg.transient(self)
+        dlg.grab_set()
+
+        # header
+        hdr = tk.Canvas(dlg, height=56, bg="#FFFFFF", highlightthickness=0)
+        hdr.pack(fill="x")
+        hdr.create_rectangle(0, 0, 760, 3, fill="#7C3AED", outline="")
+        hdr.create_oval(16, 12, 44, 40, fill="#F5F3FF", outline="#DDD6FE")
+        hdr.create_text(30, 26, text="⬆", font=("Segoe UI", 12, "bold"), fill="#7C3AED")
+        hdr.create_text(
+            54, 18, text="Import CSV", font=("Segoe UI", 11, "bold"), fill="#0F172A", anchor="w"
+        )
+        hdr.create_text(
+            54,
+            36,
+            text="Map columns → preview → import. Auto-categorizes if needed.",
+            font=("Segoe UI", 7),
+            fill="#64748B",
+            anchor="w",
+        )
+
+        # file row
+        file_row = ttk.Frame(dlg, style="Card.TFrame", padding=(12, 10, 12, 10))
+        file_row.pack(fill="x", padx=12, pady=(12, 8))
+        ttk.Label(
+            file_row,
+            text="CSV File:",
+            font=("Segoe UI", 8, "bold"),
+            foreground="#475569",
+            background="#FFFFFF",
+        ).pack(side="left")
+        v_path = tk.StringVar()
+        ttk.Entry(file_row, textvariable=v_path, width=52).pack(
+            side="left", padx=8, fill="x", expand=True
+        )
+        # mapping vars
+        v_date_col = tk.StringVar(value="Auto")
+        v_type_col = tk.StringVar(value="Auto")
+        v_cat_col = tk.StringVar(value="Auto")
+        v_amt_col = tk.StringVar(value="Auto")
+        v_note_col = tk.StringVar(value="Auto")
+        v_has_header = tk.BooleanVar(value=True)
+
+        def choose_file():
+            p = filedialog.askopenfilename(
+                filetypes=[("CSV", "*.csv"), ("All", "*.*")], title="Select CSV to import"
+            )
+            if p:
+                v_path.set(p)
+                load_preview()
+
+        ttk.Button(file_row, text="Browse…", style="Secondary.TButton", command=choose_file).pack(
+            side="right", padx=4
+        )
+
+        # mapping card
+        map_card = ttk.Frame(dlg, style="Card.TFrame", padding=(12, 10, 12, 10))
+        map_card.pack(fill="x", padx=12, pady=(0, 8))
+        ttk.Label(
+            map_card,
+            text="Column Mapping",
+            font=("Segoe UI", 8, "bold"),
+            foreground="#0F172A",
+            background="#FFFFFF",
+        ).grid(row=0, column=0, columnspan=5, sticky="w", pady=(0, 6))
+        ttk.Checkbutton(
+            map_card,
+            text="First row is header",
+            variable=v_has_header,
+            command=lambda: load_preview(),
+        ).grid(row=0, column=5, sticky="e", padx=(10, 0))
+        # row 1 labels
+        for col, txt in enumerate(["Date", "Amount", "Type", "Category", "Note"]):
+            ttk.Label(
+                map_card,
+                text=txt,
+                font=("Segoe UI", 7, "bold"),
+                foreground="#475569",
+                background="#FFFFFF",
+            ).grid(row=1, column=col, padx=4, sticky="w")
+        # row 2 combos
+        cb_date = ttk.Combobox(map_card, textvariable=v_date_col, width=12, state="readonly")
+        cb_amt = ttk.Combobox(map_card, textvariable=v_amt_col, width=12, state="readonly")
+        cb_type = ttk.Combobox(map_card, textvariable=v_type_col, width=12, state="readonly")
+        cb_cat = ttk.Combobox(map_card, textvariable=v_cat_col, width=12, state="readonly")
+        cb_note = ttk.Combobox(map_card, textvariable=v_note_col, width=12, state="readonly")
+        cb_date.grid(row=2, column=0, padx=4, pady=2)
+        cb_amt.grid(row=2, column=1, padx=4, pady=2)
+        cb_type.grid(row=2, column=2, padx=4, pady=2)
+        cb_cat.grid(row=2, column=3, padx=4, pady=2)
+        cb_note.grid(row=2, column=4, padx=4, pady=2)
+        # help
+        ttk.Label(
+            map_card,
+            text="Auto = detect from header. Amount sign → Type if Type column not mapped. Category auto-creates.",
+            font=("Segoe UI", 7),
+            foreground="#94A3B8",
+            background="#FFFFFF",
+        ).grid(row=3, column=0, columnspan=6, sticky="w", pady=(6, 0))
+
+        # preview
+        preview_card = ttk.Frame(dlg, style="Card.TFrame", padding=0)
+        preview_card.pack(fill="both", expand=True, padx=12, pady=(0, 8))
+        ttk.Label(
+            preview_card,
+            text="Preview (first 6 rows)",
+            font=("Segoe UI", 8, "bold"),
+            foreground="#0F172A",
+            background="#FFFFFF",
+        ).pack(anchor="w", padx=12, pady=(8, 4))
+        ttk.Separator(preview_card, orient="horizontal").pack(fill="x")
+        # tree for preview
+        cols = ("c0", "c1", "c2", "c3", "c4", "c5")
+        preview_tree = ttk.Treeview(preview_card, columns=cols, show="headings", height=6)
+        for c in cols:
+            preview_tree.heading(c, text=c)
+            preview_tree.column(c, width=110, anchor="w")
+        vsb = ttk.Scrollbar(preview_card, orient="vertical", command=preview_tree.yview)
+        preview_tree.configure(yscrollcommand=vsb.set)
+        vsb.pack(side="right", fill="y")
+        preview_tree.pack(fill="both", expand=True, padx=1, pady=1)
+
+        status_var = tk.StringVar(value="Choose a CSV file to begin.")
+        ttk.Label(dlg, textvariable=status_var, font=("Segoe UI", 7), foreground="#64748B").pack(
+            anchor="w", padx=14, pady=(0, 2)
+        )
+
+        # state
+        state = {"headers": [], "rows": [], "path": None}
+
+        def load_preview():
+            p = v_path.get().strip()
+            if not p or not os.path.exists(p):
+                status_var.set("File not found.")
+                return
+            try:
+                # detect delimiter and read preview
+                with open(p, "r", newline="", encoding="utf-8-sig") as f:
+                    sample = f.read(4096)
+                    f.seek(0)
+                    try:
+                        dialect = csv.Sniffer().sniff(sample, delimiters=[",", ";", "\t", "|"])
+                    except Exception:
+                        dialect = csv.excel
+                    r = csv.reader(f, dialect)
+                    all_rows = list(r)
+                    if not all_rows:
+                        status_var.set("Empty file.")
+                        return
+                    # remove empty rows
+                    all_rows = [row for row in all_rows if any(c.strip() for c in row)]
+                    if not all_rows:
+                        status_var.set("No data rows.")
+                        return
+                    # headers
+                    has_hdr = v_has_header.get()
+                    if has_hdr:
+                        headers = [h.strip() for h in all_rows[0]]
+                        data_rows = all_rows[1:6]
+                        # handle duplicate headers
+                        seen = {}
+                        for i, h in enumerate(headers):
+                            if not h:
+                                headers[i] = f"Col{i+1}"
+                            elif h in seen:
+                                headers[i] = f"{h}_{i}"
+                            seen[h] = 1
+                    else:
+                        headers = [f"Col{i+1}" for i in range(len(all_rows[0]))]
+                        data_rows = all_rows[:6]
+                    state["headers"] = headers
+                    state["rows"] = data_rows
+                    state["path"] = p
+                    # update preview tree headings
+                    for c in cols:
+                        preview_tree.heading(c, text="")
+                        preview_tree.column(c, width=110)
+                    for idx, h in enumerate(headers[:6]):
+                        col = cols[idx]
+                        preview_tree.heading(col, text=h)
+                        preview_tree.column(col, width=120)
+                    for iid in preview_tree.get_children():
+                        preview_tree.delete(iid)
+                    for row in data_rows:
+                        vals = [row[i] if i < len(row) else "" for i in range(min(6, len(headers)))]
+                        # pad
+                        vals += [""] * (6 - len(vals))
+                        preview_tree.insert("", "end", values=vals)
+                    # auto-detect mapping
+                    det = _detect_csv_columns(headers)
+                    # helper to set combo values
+                    opts = ["Auto", "— Skip —"] + headers
+                    for cb in (cb_date, cb_amt, cb_type, cb_cat, cb_note):
+                        cb["values"] = opts
+
+                    def _set(var, key):
+                        if key in det:
+                            var.set(headers[det[key]])
+                        else:
+                            var.set("Auto")
+
+                    _set(v_date_col, "date")
+                    _set(v_amt_col, "amount")
+                    _set(v_type_col, "type")
+                    _set(v_cat_col, "category")
+                    _set(v_note_col, "note")
+                    status_var.set(
+                        f"Loaded {len(all_rows)} rows, {len(headers)} cols — preview {len(data_rows)} rows. Adjust mapping then Import."
+                    )
+            except Exception as e:
+                status_var.set(f"Error: {e}")
+
+        # buttons
+        btns = ttk.Frame(dlg, padding=(0, 6, 0, 0))
+        btns.pack(fill="x", padx=12, pady=(0, 12))
+        ttk.Button(btns, text="Cancel", style="Secondary.TButton", command=dlg.destroy).pack(
+            side="right", padx=(8, 0)
+        )
+        ttk.Button(
+            btns, text="⬆  Import", style="Accent.TButton", command=lambda: do_import()
+        ).pack(side="right")
+
+        def do_import():
+            p = state.get("path")
+            if not p or not os.path.exists(p):
+                messagebox.showerror("Import", "Please select a CSV file first.", parent=dlg)
+                return
+            headers = state["headers"]
+            if not headers:
+                messagebox.showerror("Import", "No headers detected.", parent=dlg)
+                return
+
+            # build index map: field -> col idx or None
+            def _idx(var):
+                v = var.get()
+                if v in ("Auto", "— Skip —", "", None):
+                    return None
+                try:
+                    return headers.index(v)
+                except ValueError:
+                    return None
+
+            # if Auto, use detection
+            det = _detect_csv_columns(headers)
+            idx_date = _idx(v_date_col)
+            if idx_date is None and v_date_col.get() == "Auto" and "date" in det:
+                idx_date = det["date"]
+            idx_amt = _idx(v_amt_col)
+            if idx_amt is None and v_amt_col.get() == "Auto" and "amount" in det:
+                idx_amt = det["amount"]
+            idx_type = _idx(v_type_col)
+            if idx_type is None and v_type_col.get() == "Auto" and "type" in det:
+                idx_type = det["type"]
+            idx_cat = _idx(v_cat_col)
+            if idx_cat is None and v_cat_col.get() == "Auto" and "category" in det:
+                idx_cat = det["category"]
+            idx_note = _idx(v_note_col)
+            if idx_note is None and v_note_col.get() == "Auto" and "note" in det:
+                idx_note = det["note"]
+
+            if idx_date is None:
+                messagebox.showerror("Import", "Please map a Date column.", parent=dlg)
+                return
+            if idx_amt is None:
+                messagebox.showerror("Import", "Please map an Amount column.", parent=dlg)
+                return
+
+            # read all rows
+            try:
+                with open(p, "r", newline="", encoding="utf-8-sig") as f:
+                    try:
+                        dialect = csv.Sniffer().sniff(
+                            f.read(4096), delimiters=[",", ";", "\t", "|"]
+                        )
+                        f.seek(0)
+                    except Exception:
+                        f.seek(0)
+                        dialect = csv.excel
+                    reader = csv.reader(f, dialect)
+                    all_rows = list(reader)
+                    all_rows = [r for r in all_rows if any(c.strip() for c in r)]
+                    if v_has_header.get() and all_rows:
+                        all_rows = all_rows[1:]
+                    total = len(all_rows)
+                    if total == 0:
+                        messagebox.showinfo("Import", "No data rows found.", parent=dlg)
+                        return
+                    imported = 0
+                    skipped = 0
+                    errors = []
+                    created_cats = set()
+                    for line_no, row in enumerate(all_rows, start=2 if v_has_header.get() else 1):
+                        try:
+                            # ensure row has enough cols
+                            def _cell(idx):
+                                return (
+                                    row[idx].strip() if idx is not None and idx < len(row) else ""
+                                )
+
+                            raw_date = _cell(idx_date)
+                            raw_amt = _cell(idx_amt)
+                            raw_type = _cell(idx_type) if idx_type is not None else ""
+                            raw_cat = _cell(idx_cat) if idx_cat is not None else ""
+                            raw_note = _cell(idx_note) if idx_note is not None else ""
+                            # if note empty, use first non-mapped text column as fallback
+                            if not raw_note:
+                                for i, h in enumerate(headers):
+                                    if i not in (idx_date, idx_amt, idx_type, idx_cat):
+                                        cand = _cell(i)
+                                        if cand:
+                                            raw_note = cand
+                                            break
+                            # parse
+                            iso_date = parse_date_raw(raw_date)
+                            amt_val = parse_amount_raw(raw_amt)
+                            if amt_val <= 0:
+                                raise ValueError(f"amount must be >0, got {raw_amt!r}")
+                            # type
+                            ttype_raw = raw_type.strip().lower() if raw_type else ""
+                            if ttype_raw in ("income", "cr", "credit", "c"):
+                                ttype = "Income"
+                            elif ttype_raw in (
+                                "expense",
+                                "dr",
+                                "debit",
+                                "d",
+                                "withdrawal",
+                                "withdraw",
+                            ):
+                                ttype = "Expense"
+                            elif ttype_raw.capitalize() in ("Income", "Expense"):
+                                ttype = ttype_raw.capitalize()
+                            elif ttype_raw:
+                                is_neg = "-" in str(raw_amt) or "(" in str(raw_amt)
+                                ttype = "Expense" if is_neg else "Income"
+                            else:
+                                # no type column — guess from note keywords, prefer Expense
+                                exp_cat = auto_categorize(raw_note or "", "Expense")
+                                inc_cat = auto_categorize(raw_note or "", "Income")
+                                if exp_cat != "Other Expense" and inc_cat == "Other Income":
+                                    ttype = "Expense"
+                                elif inc_cat != "Other Income" and exp_cat == "Other Expense":
+                                    ttype = "Income"
+                                else:
+                                    is_neg = "-" in str(raw_amt) or "(" in str(raw_amt)
+                                    ttype = "Expense" if is_neg else "Income"
+                                    if ttype == "Income" and exp_cat != "Other Expense":
+                                        ttype = "Expense"
+                            # category
+                            cat = raw_cat.strip() if raw_cat else ""
+                            if not cat:
+                                cat = auto_categorize(raw_note or raw_cat, ttype)
+                            # dedup check
+                            with contextlib.closing(get_conn()) as conn:
+                                exists = conn.execute(
+                                    "SELECT id FROM transactions WHERE date=? AND type=? AND category=? AND amount=? AND note=?",
+                                    (iso_date, ttype, cat, amt_val, raw_note.strip()),
+                                ).fetchone()
+                                if exists:
+                                    skipped += 1
+                                    continue
+                            # ensure category exists
+                            db_add_category(cat, ttype)
+                            db_add_txn(iso_date, ttype, cat, amt_val, raw_note.strip())
+                            imported += 1
+                        except Exception as e:
+                            errors.append(f"Row {line_no}: {e}")
+                            skipped += 1
+                            if len(errors) > 20:
+                                errors.append("… more errors truncated")
+                                break
+                    # result
+                    msg = f"Import finished:\n• Total rows: {total}\n• Imported: {imported}\n• Skipped/Errors: {skipped}"
+                    if created_cats:
+                        msg += f"\n• New categories: {', '.join(created_cats)}"
+                    if errors:
+                        msg += "\n\nFirst errors:\n" + "\n".join(errors[:8])
+                        # also show in status
+                        status_var.set(
+                            f"Imported {imported}/{total}, {len(errors)} errors — see popup"
+                        )
+                    else:
+                        status_var.set(f"Imported {imported}/{total} — refreshing…")
+                    self.refresh_all()
+                    messagebox.showinfo("Import", msg, parent=dlg)
+                    if imported:
+                        dlg.destroy()
+            except Exception as e:
+                messagebox.showerror("Import", f"Failed: {e}", parent=dlg)
+
+        # initial state: no file yet, prompt user
+        status_var.set("No file selected — click Browse to choose CSV.")
 
     # ---- Add / Edit dialog ----
     def open_txn_dialog(self, edit=False):
@@ -1565,6 +2388,482 @@ class ExpenseApp(tk.Tk):
 
         btns = ttk.Frame(frm, style="Card.TFrame")
         btns.pack(fill="x", pady=(4, 0))
+        ttk.Button(btns, text="Cancel", style="Secondary.TButton", command=dlg.destroy).pack(
+            side="right", padx=(8, 0)
+        )
+        ttk.Button(btns, text="💾  Save", style="Accent.TButton", command=save).pack(side="right")
+        dlg.bind("<Return>", lambda e: save())
+
+    # ================= RECURRING =================
+    def _build_recurring(self):
+        # top toolbar
+        top = ttk.Frame(self.tab_rec, style="Card.TFrame", padding=(12, 10, 12, 10))
+        top.pack(fill="x", pady=(0, 10))
+        ttk.Label(
+            top,
+            text="🔁  Recurring",
+            font=("Segoe UI", 10, "bold"),
+            foreground="#0F172A",
+            background="#FFFFFF",
+        ).pack(side="left")
+        ttk.Label(
+            top,
+            text="•  Rent • Salary • Subscriptions — auto-generates",
+            font=("Segoe UI", 7),
+            foreground="#94A3B8",
+            background="#FFFFFF",
+        ).pack(side="left", padx=(8, 0))
+        ttk.Button(
+            top,
+            text="↻  Generate Due Now",
+            style="Success.TButton",
+            command=self.generate_due_recurring,
+        ).pack(side="right", padx=4)
+        ttk.Button(
+            top,
+            text="＋  Add Recurring",
+            style="Accent.TButton",
+            command=lambda: self.open_recurring_dialog(),
+        ).pack(side="right")
+
+        # info bar
+        info = tk.Canvas(
+            self.tab_rec,
+            bg="#EFF6FF",
+            highlightthickness=1,
+            highlightbackground="#DBEAFE",
+            height=32,
+        )
+        info.pack(fill="x", pady=(0, 10))
+        self.rec_info_canvas = info
+        self.rec_info_text_id = info.create_text(
+            12, 16, text="Loading…", font=("Segoe UI", 8), fill="#1E40AF", anchor="w"
+        )
+        info.create_text(
+            520,
+            16,
+            text="💡 Tip: Generates daily at startup + on demand",
+            font=("Segoe UI", 7),
+            fill="#64748B",
+            anchor="w",
+        )
+
+        # tree card
+        card = ttk.Frame(self.tab_rec, style="Card.TFrame", padding=0)
+        card.pack(fill="both", expand=True)
+        hdr = ttk.Frame(card, style="Card.TFrame", padding=(12, 10, 12, 8))
+        hdr.pack(fill="x")
+        ttk.Label(
+            hdr,
+            text="Schedules",
+            font=("Segoe UI", 9, "bold"),
+            foreground="#0F172A",
+            background="#FFFFFF",
+        ).pack(side="left")
+        ttk.Label(
+            hdr,
+            text="•  next due • frequency • active",
+            font=("Segoe UI", 7),
+            foreground="#94A3B8",
+            background="#FFFFFF",
+        ).pack(side="left", padx=(6, 0))
+        ttk.Button(
+            hdr, text="Preview Next 5", style="Ghost.TButton", command=self.preview_recurring
+        ).pack(side="right", padx=4)
+        ttk.Separator(card, orient="horizontal").pack(fill="x")
+        wrap = ttk.Frame(card, style="Card.TFrame", padding=(1, 0, 1, 1))
+        wrap.pack(fill="both", expand=True)
+        cols = (
+            "id",
+            "type",
+            "category",
+            "amount",
+            "frequency",
+            "next_due",
+            "active",
+            "last_gen",
+            "note",
+        )
+        self.rec_tree = ttk.Treeview(wrap, columns=cols, show="headings", height=12)
+        headings = {
+            "id": "#",
+            "type": "Type",
+            "category": "Category",
+            "amount": "Amount",
+            "frequency": "Freq",
+            "next_due": "Next Due",
+            "active": "Active",
+            "last_gen": "Last",
+            "note": "Note",
+        }
+        widths = {
+            "id": 40,
+            "type": 70,
+            "category": 110,
+            "amount": 80,
+            "frequency": 70,
+            "next_due": 90,
+            "active": 60,
+            "last_gen": 90,
+            "note": 160,
+        }
+        for c in cols:
+            self.rec_tree.heading(
+                c, text=headings[c], anchor="center" if c != "note" and c != "category" else "w"
+            )
+            self.rec_tree.column(
+                c,
+                width=widths[c],
+                anchor="center" if c != "note" and c != "category" else "w",
+                minwidth=40,
+            )
+        vsb = ttk.Scrollbar(
+            wrap, orient="vertical", command=self.rec_tree.yview, style="Vertical.TScrollbar"
+        )
+        self.rec_tree.configure(yscrollcommand=vsb.set)
+        vsb.pack(side="right", fill="y", padx=(1, 0))
+        self.rec_tree.pack(fill="both", expand=True, padx=1, pady=1)
+        self.rec_tree.tag_configure("even", background="#FFFFFF")
+        self.rec_tree.tag_configure("odd", background="#F8FAFC")
+        self.rec_tree.tag_configure("inc", foreground="#059669")
+        self.rec_tree.tag_configure("exp", foreground="#DC2626")
+        self.rec_tree.tag_configure("paused", foreground="#94A3B8")
+        self.rec_tree.bind("<Double-1>", lambda e: self.open_recurring_dialog(edit=True))
+
+        btns = ttk.Frame(self.tab_rec, padding=(0, 8, 0, 0))
+        btns.pack(fill="x")
+        ttk.Button(
+            btns,
+            text="＋  Add",
+            style="Accent.TButton",
+            command=lambda: self.open_recurring_dialog(),
+        ).pack(side="left", padx=(0, 6))
+        ttk.Button(
+            btns,
+            text="✏  Edit",
+            style="Secondary.TButton",
+            command=lambda: self.open_recurring_dialog(edit=True),
+        ).pack(side="left", padx=4)
+        ttk.Button(
+            btns,
+            text="⏸  Toggle Active",
+            style="Ghost.TButton",
+            command=self.toggle_recurring_active,
+        ).pack(side="left", padx=4)
+        ttk.Button(
+            btns, text="🗑  Delete", style="Danger.TButton", command=self.delete_recurring_selected
+        ).pack(side="left", padx=4)
+        ttk.Button(
+            btns,
+            text="↻  Generate Due",
+            style="Success.TButton",
+            command=self.generate_due_recurring,
+        ).pack(side="right")
+
+    def refresh_recurring(self):
+        if not hasattr(self, "rec_tree"):
+            return
+        rows = db_get_recurrings()
+        for i in self.rec_tree.get_children():
+            self.rec_tree.delete(i)
+        active_cnt = sum(1 for r in rows if r[9])
+        total = len(rows)
+        # next due
+        try:
+            nxt = min([r[8] for r in rows if r[9]], default=None) if rows else None
+            nxt_str = f"Next due: {nxt}" if nxt else "No active schedules"
+        except Exception:
+            nxt_str = ""
+        info_text = (
+            f"{active_cnt} active / {total} total  •  {nxt_str}  •  Auto-generates at startup"
+        )
+        if hasattr(self, "rec_info_canvas"):
+            try:
+                self.rec_info_canvas.itemconfig(self.rec_info_text_id, text=info_text)
+            except Exception:
+                pass
+        for idx, r in enumerate(rows):
+            rid, rtype, cat, amt, note, freq, start, end, nxt_due, active, last_gen = r
+            stripe = "even" if idx % 2 == 0 else "odd"
+            type_tag = "inc" if rtype == "Income" else "exp"
+            active_tag = [] if active else ["paused"]
+            tags = (stripe, type_tag, *active_tag)
+            vals = (
+                rid,
+                rtype,
+                cat,
+                f"{amt:.2f}",
+                freq,
+                nxt_due,
+                "Yes" if active else "No",
+                last_gen or "—",
+                note or "",
+            )
+            self.rec_tree.insert("", "end", values=vals, tags=tags)
+
+    def selected_recurring_id(self):
+        sel = self.rec_tree.selection()
+        if not sel:
+            messagebox.showinfo("Select", "Please select a recurring entry first.")
+            return None
+        vals = self.rec_tree.item(sel[0], "values")
+        return int(vals[0]), vals
+
+    def delete_recurring_selected(self):
+        res = self.selected_recurring_id()
+        if not res:
+            return
+        rid, vals = res
+        if messagebox.askyesno(
+            "Delete",
+            f"Delete recurring #{rid} ({vals[1]} {vals[2]} ₹{vals[3]} {vals[4]})?\nIt will no longer auto-generate.",
+        ):
+            db_delete_recurring(rid)
+            self.refresh_recurring()
+            self.refresh_all()
+
+    def toggle_recurring_active(self):
+        res = self.selected_recurring_id()
+        if not res:
+            return
+        rid, _ = res
+        # fetch full row to preserve other fields
+        rows = {r[0]: r for r in db_get_recurrings()}
+        r = rows.get(rid)
+        if not r:
+            return
+        _, rtype, cat, amt, note, freq, start, end, nxt_due, active, last_gen = r
+        new_active = not bool(active)
+        ok, msg = db_update_recurring(rid, rtype, cat, amt, note, freq, start, end, new_active)
+        if not ok:
+            messagebox.showerror("Error", msg)
+        else:
+            self.refresh_recurring()
+
+    def generate_due_recurring(self):
+        n, details = db_generate_due_recurrings()
+        if n == 0:
+            messagebox.showinfo(
+                "Generate",
+                "No recurring transactions are due today.\nNext due dates are in the future.",
+            )
+        else:
+            self.refresh_all()
+            messagebox.showinfo(
+                "Generated",
+                f"Generated {n} transaction(s):\n"
+                + "\n".join([f"#{rid} → {d}" for rid, d in details[:10]])
+                + ("\n…" if len(details) > 10 else ""),
+            )
+
+    def preview_recurring(self):
+        res = self.selected_recurring_id()
+        if not res:
+            return
+        rid, vals = res
+        rows = {r[0]: r for r in db_get_recurrings()}
+        r = rows.get(rid)
+        if not r:
+            return
+        _, rtype, cat, amt, note, freq, start, end, nxt_due, active, last_gen = r
+        # generate preview next 5 dates without DB write
+        preview = []
+        cur = nxt_due
+        for _ in range(5):
+            if end and cur > end:
+                break
+            preview.append(cur)
+            try:
+                cur = _calc_next_due(cur, freq)
+            except Exception:
+                break
+        messagebox.showinfo(
+            "Preview",
+            (
+                f"Next 5 due dates for #{rid} ({freq}):\n" + "\n".join(preview)
+                if preview
+                else "No future dates (maybe past end_date or inactive)"
+            ),
+        )
+
+    def open_recurring_dialog(self, edit=False):
+        if edit:
+            res = self.selected_recurring_id()
+            if not res:
+                return
+            rid, _ = res
+            rows = {r[0]: r for r in db_get_recurrings()}
+            r = rows.get(rid)
+            if not r:
+                return
+            _, rtype, cat, amt, note, freq, start, end, nxt_due, active, last_gen = r
+            init = {
+                "id": rid,
+                "type": rtype,
+                "category": cat,
+                "amount": str(amt),
+                "note": note or "",
+                "frequency": freq,
+                "start": start,
+                "end": end or "",
+                "active": bool(active),
+            }
+        else:
+            init = {
+                "id": None,
+                "type": "Expense",
+                "category": "",
+                "amount": "",
+                "note": "",
+                "frequency": "Monthly",
+                "start": date.today().isoformat(),
+                "end": "",
+                "active": True,
+            }
+
+        dlg = tk.Toplevel(self)
+        dlg.title("Edit Recurring" if edit else "Add Recurring")
+        dlg.geometry("440x520")
+        dlg.minsize(420, 480)
+        dlg.configure(bg="#F1F5F9")
+        dlg.transient(self)
+        dlg.grab_set()
+
+        hdr = tk.Canvas(dlg, height=62, bg="#FFFFFF", highlightthickness=0)
+        hdr.pack(fill="x")
+        hdr.create_rectangle(0, 0, 440, 3, fill="#7C3AED", outline="")
+        hdr.create_oval(16, 14, 48, 46, fill="#F5F3FF", outline="#DDD6FE")
+        hdr.create_text(32, 30, text="↻", font=("Segoe UI", 14, "bold"), fill="#7C3AED")
+        hdr.create_text(
+            60,
+            20,
+            text="Edit Recurring" if edit else "New Recurring",
+            font=("Segoe UI", 11, "bold"),
+            fill="#0F172A",
+            anchor="w",
+        )
+        hdr.create_text(
+            60,
+            38,
+            text="Auto-generates on schedule • e.g. Rent, Salary",
+            font=("Segoe UI", 7),
+            fill="#64748B",
+            anchor="w",
+        )
+
+        frm = ttk.Frame(dlg, padding=(18, 16, 18, 12), style="Card.TFrame")
+        frm.pack(fill="both", expand=True, padx=12, pady=12)
+
+        v_type = tk.StringVar(value=init["type"])
+        v_cat = tk.StringVar(value=init["category"])
+        v_amt = tk.StringVar(value=init["amount"])
+        v_note = tk.StringVar(value=init["note"])
+        v_freq = tk.StringVar(value=init["frequency"])
+        v_start = tk.StringVar(value=init["start"])
+        v_end = tk.StringVar(value=init["end"])
+        v_active = tk.BooleanVar(value=init["active"])
+
+        def _lbl(txt):
+            ttk.Label(
+                frm,
+                text=txt,
+                font=("Segoe UI", 7, "bold"),
+                foreground="#475569",
+                background="#FFFFFF",
+            ).pack(anchor="w", pady=(0, 2))
+
+        _lbl("Type")
+        type_box = ttk.Combobox(
+            frm, textvariable=v_type, values=["Income", "Expense"], state="readonly"
+        )
+        type_box.pack(fill="x", pady=(0, 10))
+        _lbl("Category")
+        cat_box = ttk.Combobox(frm, textvariable=v_cat)
+        cat_box.pack(fill="x", pady=(0, 10))
+
+        def load_cats(*_):
+            cat_box["values"] = [n for _, n, _ in db_get_categories(v_type.get())]
+
+        v_type.trace_add("write", load_cats)
+        load_cats()
+        if init["category"]:
+            v_cat.set(init["category"])
+
+        _lbl("Amount  •  ₹")
+        ttk.Entry(frm, textvariable=v_amt).pack(fill="x", pady=(0, 10))
+        _lbl("Note  •  optional (e.g. Rent)")
+        ttk.Entry(frm, textvariable=v_note).pack(fill="x", pady=(0, 10))
+        _lbl("Frequency")
+        ttk.Combobox(
+            frm,
+            textvariable=v_freq,
+            values=["Daily", "Weekly", "Monthly", "Yearly"],
+            state="readonly",
+        ).pack(fill="x", pady=(0, 10))
+        _lbl("Start Date  •  YYYY-MM-DD (first due)")
+        ttk.Entry(frm, textvariable=v_start).pack(fill="x", pady=(0, 10))
+        _lbl("End Date  •  YYYY-MM-DD (optional, leave blank for forever)")
+        ttk.Entry(frm, textvariable=v_end).pack(fill="x", pady=(0, 10))
+        ttk.Checkbutton(frm, text="Active (will generate)", variable=v_active).pack(
+            anchor="w", pady=(2, 6)
+        )
+
+        def save():
+            try:
+                amt = float(v_amt.get())
+                assert amt > 0
+            except Exception:
+                messagebox.showerror("Invalid", "Amount must be a number > 0.", parent=dlg)
+                return
+            if not v_cat.get().strip():
+                messagebox.showerror("Invalid", "Please choose a category.", parent=dlg)
+                return
+            try:
+                _validate_date(v_start.get().strip())
+                if v_end.get().strip():
+                    _validate_date(v_end.get().strip())
+            except Exception as e:
+                messagebox.showerror("Invalid", str(e), parent=dlg)
+                return
+            try:
+                if edit:
+                    ok, msg = db_update_recurring(
+                        init["id"],
+                        v_type.get(),
+                        v_cat.get().strip(),
+                        amt,
+                        v_note.get().strip(),
+                        v_freq.get(),
+                        v_start.get().strip(),
+                        v_end.get().strip() or None,
+                        v_active.get(),
+                    )
+                    if not ok:
+                        messagebox.showerror("Error", msg, parent=dlg)
+                        return
+                else:
+                    db_add_recurring(
+                        v_type.get(),
+                        v_cat.get().strip(),
+                        amt,
+                        v_note.get().strip(),
+                        v_freq.get(),
+                        v_start.get().strip(),
+                        v_end.get().strip() or None,
+                        v_active.get(),
+                    )
+            except Exception as e:
+                messagebox.showerror("Error", str(e), parent=dlg)
+                return
+            dlg.destroy()
+            self.refresh_recurring()
+            self.refresh_all()
+            # if start date is today or past, generate immediately
+            if v_start.get().strip() <= date.today().isoformat() and v_active.get():
+                self.generate_due_recurring()
+
+        btns = ttk.Frame(frm, style="Card.TFrame")
+        btns.pack(fill="x", pady=(8, 0))
         ttk.Button(btns, text="Cancel", style="Secondary.TButton", command=dlg.destroy).pack(
             side="right", padx=(8, 0)
         )
@@ -2704,6 +4003,27 @@ class ExpenseApp(tk.Tk):
         ttk.Button(frm, text="💾 Backup DB…", command=do_backup).pack(fill="x", pady=3)
         ttk.Button(frm, text="Close", command=dlg.destroy).pack(fill="x", pady=(14, 0))
 
+    def _auto_generate_recurring(self):
+        try:
+            n, details = db_generate_due_recurrings()
+            if n:
+                self.refresh_all()
+                msg = f"↻ Auto-generated {n} recurring transaction(s)"
+                if hasattr(self, "footer_var"):
+                    self.footer_var.set(msg + f" • {date.today().isoformat()}")
+                print(msg, details)
+                # gentle toast — not modal on startup
+                self.after(
+                    600,
+                    lambda: (
+                        self.lbl_graph_sum.config(text=msg)
+                        if hasattr(self, "lbl_graph_sum")
+                        else None
+                    ),
+                )
+        except Exception as e:
+            print(f"Recurring auto-generate failed: {e}")
+
     # -- master refresh --
     def refresh_all(self):
         self.refresh_dashboard()
@@ -2711,6 +4031,9 @@ class ExpenseApp(tk.Tk):
         self.refresh_categories()
         self.refresh_reports()
         self.refresh_graphs()
+        # also refresh recurring if tab exists
+        if hasattr(self, "rec_tree"):
+            self.refresh_recurring()
 
 
 def main():

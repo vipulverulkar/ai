@@ -5,10 +5,11 @@ Inserts realistic Income + Expense rows spread over the last N months
 (default 6, ending today). Re-running adds MORE rows — delete
 expenses.db to start fresh. Stdlib only.
 """
+
 import calendar
 import random
 import sys
-from datetime import date, timedelta
+from datetime import date
 
 import expense_tracker as app
 
@@ -46,16 +47,31 @@ def seed(months=6):
         # ---- income ----
         add(day(1), "Income", "Salary", random.randint(45000, 55000) // 100 * 100, "Monthly salary")
         if random.random() < 0.5:
-            add(day(random.randint(5, 25)), "Income", "Freelance",
-                random.randint(3000, 15000) // 100 * 100, "Side project")
+            add(
+                day(random.randint(5, 25)),
+                "Income",
+                "Freelance",
+                random.randint(3000, 15000) // 100 * 100,
+                "Side project",
+            )
         if random.random() < 0.3:
-            add(day(random.randint(10, 28)), "Income", "Interest",
-                random.randint(500, 2500), "Bank interest")
+            add(
+                day(random.randint(10, 28)),
+                "Income",
+                "Interest",
+                random.randint(500, 2500),
+                "Bank interest",
+            )
 
         # ---- fixed expenses ----
         add(day(5), "Expense", "Rent", random.randint(10000, 12000) // 100 * 100, "House rent")
-        add(day(15), "Expense", "Utilities",
-            random.randint(1500, 3500), random.choice(["Electricity bill", "Water bill", "Internet"]))
+        add(
+            day(15),
+            "Expense",
+            "Utilities",
+            random.randint(1500, 3500),
+            random.choice(["Electricity bill", "Water bill", "Internet"]),
+        )
 
         # ---- groceries: weekly ----
         for d in range(3, last + 1, 7):
@@ -64,8 +80,13 @@ def seed(months=6):
         # ---- food: few times a week ----
         for d in range(1, last + 1):
             if random.random() < 0.35:
-                add(day(d), "Expense", "Food", random.randint(120, 600),
-                    random.choice(["Lunch", "Dinner", "Snacks", "Coffee"]))
+                add(
+                    day(d),
+                    "Expense",
+                    "Food",
+                    random.randint(120, 600),
+                    random.choice(["Lunch", "Dinner", "Snacks", "Coffee"]),
+                )
 
         # ---- transport: most weekdays ----
         for d in range(1, last + 1):
@@ -74,22 +95,47 @@ def seed(months=6):
             except ValueError:
                 continue
             if wd < 5 and random.random() < 0.8:
-                add(day(d), "Expense", "Transport", random.randint(50, 300),
-                    random.choice(["Bus", "Metro", "Auto", "Fuel"]))
+                add(
+                    day(d),
+                    "Expense",
+                    "Transport",
+                    random.randint(50, 300),
+                    random.choice(["Bus", "Metro", "Auto", "Fuel"]),
+                )
 
         # ---- shopping / entertainment / health / education ----
         for _ in range(random.randint(2, 4)):
-            add(day(random.randint(1, last)), "Expense", "Shopping",
-                random.randint(500, 5000), random.choice(["Clothes", "Shoes", "Gadgets", "Gifts"]))
+            add(
+                day(random.randint(1, last)),
+                "Expense",
+                "Shopping",
+                random.randint(500, 5000),
+                random.choice(["Clothes", "Shoes", "Gadgets", "Gifts"]),
+            )
         for _ in range(random.randint(1, 3)):
-            add(day(random.randint(1, last)), "Expense", "Entertainment",
-                random.randint(200, 1500), random.choice(["Movie", "Restaurant", "Games"]))
+            add(
+                day(random.randint(1, last)),
+                "Expense",
+                "Entertainment",
+                random.randint(200, 1500),
+                random.choice(["Movie", "Restaurant", "Games"]),
+            )
         if random.random() < 0.6:
-            add(day(random.randint(1, last)), "Expense", "Health",
-                random.randint(300, 2000), random.choice(["Pharmacy", "Checkup"]))
+            add(
+                day(random.randint(1, last)),
+                "Expense",
+                "Health",
+                random.randint(300, 2000),
+                random.choice(["Pharmacy", "Checkup"]),
+            )
         if random.random() < 0.4:
-            add(day(random.randint(1, last)), "Expense", "Education",
-                random.randint(500, 3000), random.choice(["Books", "Course"]))
+            add(
+                day(random.randint(1, last)),
+                "Expense",
+                "Education",
+                random.randint(500, 3000),
+                random.choice(["Books", "Course"]),
+            )
 
     return count
 

@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Expense Tracker{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="{{ url_for('index') }}"><span class="logo">₹</span> Expense Tracker</a>
+    <div class="links">
+      <a href="{{ url_for('index') }}" class="{% if request.endpoint == 'index' %}active{% endif %}">Dashboard</a>
+      <a href="{{ url_for('transactions') }}" class="{% if request.endpoint in ('transactions', 'edit_transaction') %}active{% endif %}">Transactions</a>
+      <a href="{{ url_for('reports') }}" class="{% if request.endpoint == 'reports' %}active{% endif %}">Reports</a>
+      <a href="{{ url_for('categories') }}" class="{% if request.endpoint == 'categories' %}active{% endif %}">Categories</a>
+    </div>
+  </div>
+</nav>
+<main class="container">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for cat, msg in messages %}
+        <div class="flash {{ cat }}" onclick="this.remove()" title="Click to dismiss">
+          <span class="fi">{% if cat == 'success' %}✓{% else %}!{% endif %}</span>{{ msg }}
+        </div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+  {% block content %}{% endblock %}
+</main>
+<footer class="footer"><b>Expense Tracker</b> · built with Python, Flask &amp; SQLite</footer>
+<script>
+  // Auto-switch category dropdown based on income/expense radio
+  function bindTypeCategory(formId) {
+    const form = document.getElementById(formId);
+    if (!form) return;
+    const radios = form.querySelectorAll('input[name="type"]');
+    const select = form.querySelector('select[name="category_id"]');
+    if (!radios.length || !select) return;
+    function apply() {
+      const checked = form.querySelector('input[name="type"]:checked');
+      if (!checked) return;
+      const t = checked.value;
+      [...select.options].forEach(o => {
+        o.hidden = o.dataset.type && o.dataset.type !== t;
+      });
+      const visible = [...select.options].filter(o => !o.hidden && o.value);
+      if (select.selectedOptions.length && select.selectedOptions[0].hidden) {
+        if (visible.length) select.value = visible[0].value;
+      }
+    }
+    radios.forEach(r => r.addEventListener('change', apply));
+    apply();
+  }
+  bindTypeCategory('add-form');
+  bindTypeCategory('edit-form');
+  // Auto-dismiss flash messages
+  setTimeout(() => document.querySelectorAll('.flash').forEach(f => f.remove()), 5000);
+</script>
+</body>
+</html>

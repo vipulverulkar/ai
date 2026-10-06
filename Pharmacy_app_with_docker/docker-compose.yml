@@ -1,0 +1,41 @@
+# Pharmacy Billing App — easiest way to run.
+#
+#   docker compose up -d --build
+#   App → http://localhost:5000/   (login: admin / admin)
+#
+# Data persists in named volumes:
+#   pharmacy-data     SQLite database (/data/pharmacy.db)
+#   pharmacy-uploads  store logos (/app/backend/uploads)
+# Back up the DB:  docker run --rm -v pharmacy-data:/data \
+#                    -v "$PWD:/backup" alpine cp /data/pharmacy.db /backup/
+
+services:
+  pharmacy:
+    build: .
+    image: pharmacy-app:latest
+    container_name: pharmacy-app
+    ports:
+      # Host port defaults to 5000; override when busy, e.g. HOST_PORT=5001
+      - "${HOST_PORT:-5000}:5000"
+    # HOST/PORT/DATABASE_URL have sane defaults in the Dockerfile.
+    # To seed a different first-run admin or session length, add:
+    #   environment:
+    #     ADMIN_USER: admin
+    #     ADMIN_PASS: "change-me-on-first-login"
+    #     SESSION_HOURS: "12"
+    # Or point at Postgres (needs a matching driver installed):
+    #     DATABASE_URL: postgresql+psycopg2://user:pass@db/pharmacy
+    volumes:
+      - pharmacy-data:/data
+      - pharmacy-uploads:/app/backend/uploads
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:5000/api/health', timeout=4).status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  pharmacy-data:
+  pharmacy-uploads:

@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Categories – Expense Tracker{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <div>
+    <h1>Categories</h1>
+    <p class="sub">Group every transaction as income or expense</p>
+  </div>
+</div>
+
+<div class="grid two">
+  <section class="panel">
+    <div class="panel-head">
+      <span class="pic">➕</span>
+      <div><h2>Add Category</h2><p>e.g. Groceries, Salary, Rent</p></div>
+    </div>
+    <form method="post">
+      <label>Name<input type="text" name="name" required maxlength="50" placeholder="e.g. Groceries"></label>
+      <div class="segment">
+        <label><input type="radio" name="type" value="expense" checked> ➖ Expense</label>
+        <label><input type="radio" name="type" value="income"> ➕ Income</label>
+      </div>
+      <button class="btn primary block" type="submit">Add category</button>
+    </form>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <span class="pic">🏷️</span>
+      <div><h2>All Categories</h2><p>Delete only unused ones</p></div>
+      <span class="spacer"></span>
+      <span class="count-pill">{{ categories|length }}</span>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Name</th><th>Type</th><th>Used</th><th></th></tr></thead>
+      <tbody>
+      {% for c in categories %}
+        <tr>
+          <td class="cat-name">{{ c['name'] }}</td>
+          <td><span class="badge {{ c['type'] }}">{{ c['type'] }}</span></td>
+          <td><span class="usage-pill">{{ usage.get(c['id'], 0) }}×</span></td>
+          <td>
+            <form method="post" action="{{ url_for('delete_category', cat_id=c['id']) }}" onsubmit="return confirm('Delete category {{ c['name'] }}?')">
+              <button class="btn small danger" type="submit">Delete</button>
+            </form>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="4" class="empty"><span class="big">🏷️</span>No categories yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    <p class="hint">A category with transactions cannot be deleted.</p>
+  </section>
+</div>
+{% endblock %}

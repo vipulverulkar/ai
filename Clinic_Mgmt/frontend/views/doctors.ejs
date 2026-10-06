@@ -1,0 +1,51 @@
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+  <div>
+    <h1 class="page-title"><i class="bi bi-person-badge me-2"></i>Doctors <span class="badge bg-success count-badge"><%= doctors.length %></span></h1>
+    <p class="page-subtitle">Specialists, experience and consultation fees</p>
+  </div>
+  <a href="/doctors/new" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i>Add Doctor</a>
+</div>
+
+<div class="card table-card">
+  <div class="card-body">
+    <div class="table-responsive">
+      <table class="table table-striped table-hover" id="doctorsTable" data-paginate data-page-size="10">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Name</th>
+            <th>Specialization</th>
+            <th>Phone</th>
+            <th>Email</th>
+            <th>Experience</th>
+            <th>Consultation Fee</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% doctors.forEach(d => { %>
+            <tr>
+              <td><%= d.id %></td>
+              <td><span class="avatar avatar-green"><%= (d.name || '?').charAt(0).toUpperCase() %></span><%= d.name %></td>
+              <td><span class="badge bg-info text-dark"><%= d.specialization %></span></td>
+              <td><%= d.phone %></td>
+              <td><%= d.email %></td>
+              <td><%= d.experience_years %> years</td>
+              <td>₹<%= d.consultation_fee %></td>
+              <td class="text-nowrap">
+                <a href="/doctors/<%= d.id %>/edit" class="btn btn-sm btn-outline-primary" title="Edit"><i class="bi bi-pencil"></i></a>
+                <form action="/doctors/<%= d.id %>/delete" method="POST" class="d-inline" onsubmit="return confirm('Delete this doctor?')">
+                  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                  <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete"><i class="bi bi-trash"></i></button>
+                </form>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+      <% if (doctors.length === 0) { %>
+        <div class="empty-state"><i class="bi bi-person-badge d-block"></i>No doctors found. <a href="/doctors/new">Add your first doctor</a></div>
+      <% } %>
+    </div>
+  </div>
+</div>

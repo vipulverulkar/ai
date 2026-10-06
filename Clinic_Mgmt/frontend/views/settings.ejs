@@ -1,0 +1,100 @@
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+  <div>
+    <h1 class="page-title"><i class="bi bi-sliders me-2"></i>Clinic Settings</h1>
+    <p class="page-subtitle">Profile, tax and invoice defaults used across the app</p>
+  </div>
+</div>
+
+<% if (saved) { %>
+  <div class="alert alert-success d-flex align-items-center" role="alert">
+    <i class="bi bi-check-circle-fill me-2"></i>Settings saved
+  </div>
+<% } %>
+
+<div class="row justify-content-center">
+  <div class="col-md-8">
+    <div class="card">
+      <div class="card-header form-card-header"><h4 class="mb-0"><i class="bi bi-hospital me-2"></i>Clinic Profile</h4></div>
+      <div class="card-body">
+        <form action="/settings" method="POST">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <label class="form-label">Clinic Name *</label>
+              <input type="text" name="clinic_name" class="form-control" value="<%= settings.clinic_name || '' %>" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Address</label>
+              <input type="text" name="clinic_address" class="form-control" value="<%= settings.clinic_address || '' %>">
+            </div>
+          </div>
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <label class="form-label">Phone</label>
+              <input type="text" name="clinic_phone" class="form-control" value="<%= settings.clinic_phone || '' %>">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Email</label>
+              <input type="email" name="clinic_email" class="form-control" value="<%= settings.clinic_email || '' %>">
+            </div>
+          </div>
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <label class="form-label">Tax Percent (%)</label>
+              <input type="number" name="tax_percent" class="form-control" min="0" max="100" step="0.01" value="<%= settings.tax_percent || '0' %>">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Invoice Prefix</label>
+              <input type="text" name="invoice_prefix" class="form-control" value="<%= settings.invoice_prefix || 'INV' %>">
+            </div>
+          </div>
+          <hr class="my-4">
+          <h5 class="mb-3"><i class="bi bi-shield-lock me-1"></i>Security Policy</h5>
+          <div class="row mb-3">
+            <div class="col-md-4">
+              <label class="form-label">Password Min Length</label>
+              <input type="number" name="password_min_length" class="form-control" min="4" max="64" value="<%= settings.password_min_length || '8' %>">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Login Max Attempts</label>
+              <input type="number" name="rate_limit_max_attempts" class="form-control" min="1" max="100" value="<%= settings.rate_limit_max_attempts || '5' %>">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Lockout Window (min)</label>
+              <input type="number" name="rate_limit_window_minutes" class="form-control" min="1" max="1440" value="<%= settings.rate_limit_window_minutes || '5' %>">
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Save Settings</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<% if (typeof restore_error !== 'undefined' && restore_error) { %>
+  <div class="alert alert-danger d-flex align-items-center mt-3" role="alert">
+    <i class="bi bi-exclamation-triangle-fill me-2"></i><%= restore_error %>
+  </div>
+<% } %>
+
+<div class="row justify-content-center mt-4">
+  <div class="col-md-8">
+    <div class="card">
+      <div class="card-header"><i class="bi bi-hdd-stack me-1"></i>Backup &amp; Restore</div>
+      <div class="card-body">
+        <p class="text-muted">Download a full database snapshot, or restore from a previous backup file. Restoring replaces all current data.</p>
+        <div class="d-flex flex-wrap gap-3 align-items-end">
+          <a href="/settings/backup" class="btn btn-outline-success"><i class="bi bi-download me-1"></i>Download Backup</a>
+          <form action="/settings/restore" method="POST" enctype="multipart/form-data" class="d-flex gap-2 align-items-end" onsubmit="return confirm('Restore will REPLACE all current data. Continue?')">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <div>
+              <label class="form-label">Backup file (.sql / .db)</label>
+              <input type="file" name="backup" class="form-control" accept=".sql,.db" required>
+            </div>
+            <button type="submit" class="btn btn-outline-danger"><i class="bi bi-upload me-1"></i>Restore</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

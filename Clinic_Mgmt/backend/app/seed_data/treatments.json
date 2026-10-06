@@ -1,0 +1,15 @@
+[
+  {"name": "General Health Checkup", "category": "Consultation", "description": "Comprehensive physical examination with vitals.", "duration_minutes": 30, "cost": 500},
+  {"name": "Specialist Consultation", "category": "Consultation", "description": "In-depth consultation with a specialist doctor.", "duration_minutes": 30, "cost": 800},
+  {"name": "Blood Test Panel", "category": "Diagnostic", "description": "CBC, sugar, cholesterol and liver function tests.", "duration_minutes": 20, "cost": 600},
+  {"name": "X-Ray Chest", "category": "Diagnostic", "description": "Digital chest radiography with report.", "duration_minutes": 15, "cost": 800},
+  {"name": "Ultrasound Abdomen", "category": "Diagnostic", "description": "Whole abdomen ultrasound scanning.", "duration_minutes": 30, "cost": 1200},
+  {"name": "Wound Suturing", "category": "Surgical", "description": "Cleaning, suturing and dressing of minor wounds.", "duration_minutes": 30, "cost": 1500},
+  {"name": "Cataract Surgery", "category": "Surgical", "description": "Phacoemulsification with intraocular lens implant.", "duration_minutes": 60, "cost": 25000},
+  {"name": "Physiotherapy Session", "category": "Therapy", "description": "One-on-one rehabilitation and exercise therapy.", "duration_minutes": 45, "cost": 600},
+  {"name": "Counseling Session", "category": "Therapy", "description": "Confidential psychological counseling.", "duration_minutes": 60, "cost": 1000},
+  {"name": "Flu Vaccination", "category": "Medication", "description": "Seasonal influenza vaccine administration.", "duration_minutes": 15, "cost": 1200},
+  {"name": "IV Drip Therapy", "category": "Medication", "description": "Supervised intravenous fluid and vitamin therapy.", "duration_minutes": 60, "cost": 2000},
+  {"name": "Post-Surgery Review", "category": "Follow-up", "description": "Suture removal and recovery assessment.", "duration_minutes": 20, "cost": 400},
+  {"name": "Chronic Care Review", "category": "Follow-up", "description": "Ongoing review for diabetes, BP and thyroid care.", "duration_minutes": 20, "cost": 500}
+]

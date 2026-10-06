@@ -1,0 +1,41 @@
+<div class="row justify-content-center">
+  <div class="col-md-8">
+    <div class="card">
+      <div class="card-header form-card-header">
+        <h4 class="mb-0"><i class="bi bi-person-plus me-2"></i><%= targetUser ? 'Edit User' : 'Add New User' %></h4>
+      </div>
+      <div class="card-body">
+        <% if (error) { %>
+          <div class="alert alert-danger d-flex align-items-center" role="alert">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i><%= error %>
+          </div>
+        <% } %>
+        <form action="<%= targetUser ? '/users/' + targetUser.id : '/users' %>" method="POST">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <label class="form-label">Username *</label>
+              <input type="text" name="username" class="form-control" value="<%= targetUser?.username || '' %>" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Role *</label>
+              <select name="role" class="form-select" required>
+                <% (typeof roles !== 'undefined' ? roles : []).forEach(r => { %>
+                  <option value="<%= r %>" <%= targetUser?.role === r ? 'selected' : '' %>><%= r.charAt(0).toUpperCase() + r.slice(1) %></option>
+                <% }) %>
+              </select>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Password <%= targetUser ? '(leave blank to keep current)' : '*' %></label>
+            <input type="password" name="password" class="form-control" minlength="<%= (typeof clinic !== 'undefined' && clinic.password_min_length) || '8' %>" placeholder="<%= targetUser ? 'New password (optional)' : 'Enter password' %>" <%= targetUser ? '' : 'required' %>>
+          </div>
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">Save</button>
+            <a href="/users" class="btn btn-secondary">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>

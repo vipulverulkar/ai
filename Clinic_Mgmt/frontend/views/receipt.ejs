@@ -1,0 +1,31 @@
+<div class="mb-4 d-flex gap-2">
+  <a href="/bills/<%= bill.id %>" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Back to Invoice</a>
+  <button class="btn btn-sm btn-outline-primary" onclick="window.print()"><i class="bi bi-printer me-1"></i>Print Receipt</button>
+</div>
+
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <div class="card">
+      <div class="card-body p-4 p-md-5 text-center">
+        <h4 class="fw-bold mb-1"><%= (typeof clinic !== 'undefined' && clinic.clinic_name) || 'Clinic' %></h4>
+        <p class="text-muted mb-4">Payment Receipt</p>
+        <h2 class="bill-no text-primary mb-1">R-<%= String(payment.id).padStart(5, '0') %></h2>
+        <p class="text-muted">Dated <%= payment.created_at ? new Date(payment.created_at).toLocaleString() : '' %></p>
+        <hr>
+        <div class="table-responsive">
+          <table class="table">
+            <tbody class="text-start">
+              <tr><td class="text-muted">Received From</td><td class="text-end fw-bold"><%= bill.patient_name || 'N/A' %></td></tr>
+              <tr><td class="text-muted">Against Bill</td><td class="text-end fw-bold bill-no"><%= bill.bill_no %></td></tr>
+              <tr><td class="text-muted">Payment Mode</td><td class="text-end"><span class="badge bg-info text-dark"><%= payment.method %></span></td></tr>
+              <% if (payment.note) { %><tr><td class="text-muted">Note</td><td class="text-end"><%= payment.note %></td></tr><% } %>
+              <tr><td class="fw-bold fs-5">Amount Received</td><td class="text-end fw-bold fs-4 text-success">&#8377;<%= payment.amount %></td></tr>
+              <tr><td class="text-muted">Bill Balance After Payment</td><td class="text-end fw-bold">&#8377;<%= bill.balance %></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="text-muted mt-4 mb-0">Thank you. Please preserve this receipt for your records.</p>
+      </div>
+    </div>
+  </div>
+</div>

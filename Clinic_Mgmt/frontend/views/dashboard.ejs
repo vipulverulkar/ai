@@ -1,0 +1,226 @@
+<%
+const _now = new Date();
+const _pad = n => String(n).padStart(2, '0');
+const todayKey = `${_now.getFullYear()}-${_pad(_now.getMonth() + 1)}-${_pad(_now.getDate())}`;
+const monthKey = todayKey.slice(0, 7);
+const _bills = (typeof bills !== 'undefined' ? bills : []);
+let collectedToday = 0, collectedMonth = 0, outstandingTotal = 0;
+_bills.forEach(b => {
+  outstandingTotal += (b.balance || 0);
+  (b.payments || []).forEach(p => {
+    if ((p.created_at || '').slice(0, 10) === todayKey) collectedToday += (p.amount || 0);
+    if ((p.created_at || '').slice(0, 7) === monthKey) collectedMonth += (p.amount || 0);
+  });
+});
+const todaysAppts = appointments.filter(a => (a.appointment_date || '').slice(0, 10) === todayKey);
+const pendingAppts = appointments.filter(a => a.status === 'pending');
+const unpaidBills = _bills.filter(b => (b.balance || 0) > 0);
+const _lab = (typeof labOrders !== 'undefined' ? labOrders : []);
+const openLabs = _lab.filter(o => ['ordered', 'collected', 'in_progress'].includes(o.status));
+%>
+<div class="row mb-4 align-items-end">
+  <div class="col-12 col-md-7">
+    <h1 class="page-title">Welcome back<% if (typeof user !== 'undefined' && user) { %>, <%= user.username %><% } %></h1>
+    <p class="page-subtitle">Here's what's happening at your clinic today.</p>
+  </div>
+  <div class="col-12 col-md-5 text-md-end mt-3 mt-md-0">
+    <a href="/appointments/new" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i>Book Appointment</a>
+  </div>
+</div>
+
+<div class="row mb-4 g-3">
+  <div class="col-sm-6 col-lg-3">
+    <div class="card stat-card stat-blue h-100">
+      <div class="card-body d-flex align-items-center gap-3">
+        <span class="stat-icon"><i class="bi bi-people"></i></span>
+        <div>
+          <p class="stat-value text-primary"><%= patients.length %></p>
+          <p class="stat-label">Total Patients</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-lg-3">
+    <div class="card stat-card stat-green h-100">
+      <div class="card-body d-flex align-items-center gap-3">
+        <span class="stat-icon"><i class="bi bi-person-badge"></i></span>
+        <div>
+          <p class="stat-value text-success"><%= doctors.length %></p>
+          <p class="stat-label">Doctors</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-lg-3">
+    <div class="card stat-card stat-amber h-100">
+      <div class="card-body d-flex align-items-center gap-3">
+        <span class="stat-icon"><i class="bi bi-capsule"></i></span>
+        <div>
+          <p class="stat-value text-warning"><%= treatments.length %></p>
+          <p class="stat-label">Treatments</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-lg-3">
+    <div class="card stat-card stat-rose h-100">
+      <div class="card-body d-flex align-items-center gap-3">
+        <span class="stat-icon"><i class="bi bi-calendar-check"></i></span>
+        <div>
+          <p class="stat-value text-danger"><%= appointments.length %></p>
+          <p class="stat-label">Appointments</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<% if (typeof user !== 'undefined' && user && user.role === 'admin') { %>
+<div class="row mb-4 g-3">
+  <div class="col-sm-6 col-lg-4">
+    <div class="card stat-card stat-green compact h-100"><div class="card-body d-flex align-items-center gap-3">
+      <span class="stat-icon"><i class="bi bi-cash-stack"></i></span>
+      <div><p class="stat-value text-success">&#8377;<%= Math.round(collectedToday) %></p><p class="stat-label">Collected Today</p></div>
+    </div></div>
+  </div>
+  <div class="col-sm-6 col-lg-4">
+    <div class="card stat-card stat-blue compact h-100"><div class="card-body d-flex align-items-center gap-3">
+      <span class="stat-icon"><i class="bi bi-wallet2"></i></span>
+      <div><p class="stat-value text-primary">&#8377;<%= Math.round(collectedMonth) %></p><p class="stat-label">Collected This Month</p></div>
+    </div></div>
+  </div>
+  <div class="col-sm-6 col-lg-4">
+    <div class="card stat-card stat-rose compact h-100"><div class="card-body d-flex align-items-center gap-3">
+      <span class="stat-icon"><i class="bi bi-exclamation-circle"></i></span>
+      <div><p class="stat-value text-danger">&#8377;<%= Math.round(outstandingTotal) %></p><p class="stat-label">Outstanding Dues</p></div>
+    </div></div>
+  </div>
+</div>
+<% } %>
+
+<div class="row mb-4 g-3">
+  <div class="col-12">
+    <div class="card">
+      <div class="card-body d-flex flex-wrap gap-2">
+        <a href="/patients/new" class="btn btn-outline-primary quick-action flex-fill"><i class="bi bi-person-plus me-1"></i>Add Patient</a>
+        <a href="/doctors/new" class="btn btn-outline-success quick-action flex-fill"><i class="bi bi-person-plus-fill me-1"></i>Add Doctor</a>
+        <% if (typeof user !== 'undefined' && user && user.role === 'admin') { %>
+          <a href="/treatments/new" class="btn btn-outline-warning quick-action flex-fill"><i class="bi bi-plus-circle me-1"></i>Add Treatment</a>
+        <% } %>
+        <a href="/appointments/new" class="btn btn-outline-danger quick-action flex-fill"><i class="bi bi-calendar-plus me-1"></i>Book Appointment</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-md-7">
+    <div class="card h-100">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-calendar-day me-1"></i>Today's Schedule <span class="badge bg-primary count-badge"><%= todaysAppts.length %></span></span>
+        <a href="/appointments/new" class="btn btn-sm btn-outline-primary">Book</a>
+      </div>
+      <div class="card-body">
+        <% if (!todaysAppts.length) { %>
+          <div class="empty-state"><i class="bi bi-calendar-x d-block"></i>No appointments today</div>
+        <% } else { %>
+          <ul class="list-group list-group-flush">
+            <% todaysAppts.slice(0, 6).forEach(a => { %>
+              <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+                <span><strong><%= (a.appointment_date || '').slice(11, 16) %></strong> &mdash; <%= a.patient_name || 'N/A' %> <span class="text-muted">with <%= a.doctor_name || 'N/A' %></span></span>
+                <span class="badge bg-<%= a.status === 'confirmed' ? 'success' : a.status === 'pending' ? 'warning' : 'danger' %>"><%= a.status %></span>
+              </li>
+            <% }) %>
+          </ul>
+          <% if (todaysAppts.length > 6) { %>
+            <a href="/appointments" class="btn btn-sm btn-outline-secondary mt-2">View all <%= todaysAppts.length %></a>
+          <% } %>
+        <% } %>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-5">
+    <div class="card h-100">
+      <div class="card-header"><i class="bi bi-bell me-1"></i>Needs Attention</div>
+      <div class="card-body">
+        <% const _alerts = []; %>
+        <% if (pendingAppts.length) { _alerts.push({ icon: 'bi-hourglass-split', text: pendingAppts.length + ' pending appointment' + (pendingAppts.length > 1 ? 's' : ''), href: '/appointments' }); } %>
+        <% if (openLabs.length) { _alerts.push({ icon: 'bi-eyedropper', text: openLabs.length + ' open lab order' + (openLabs.length > 1 ? 's' : ''), href: '/lab-orders' }); } %>
+        <% const _d0 = new Date(); _d0.setHours(0,0,0,0); const _due = appointments.filter(a => a.follow_up_date && !['completed', 'cancelled'].includes(a.status) && new Date(a.follow_up_date) <= new Date(_d0.getTime() + 7 * 864e5)); %>
+        <% if (_due.length) { _alerts.push({ icon: 'bi-bell', text: _due.length + ' follow-up' + (_due.length > 1 ? 's' : '') + ' due', href: '/followups' }); } %>
+        <% if (unpaidBills.length) { _alerts.push({ icon: 'bi-exclamation-triangle', text: unpaidBills.length + ' unpaid bill' + (unpaidBills.length > 1 ? 's' : '') + ' (&#8377;' + Math.round(unpaidBills.reduce((s, b) => s + (b.balance || 0), 0)) + ')', href: '/bills' }); } %>
+        <% if (!doctors.length) { _alerts.push({ icon: 'bi-person-plus', text: 'No doctors registered yet', href: '/doctors/new' }); } %>
+        <% if (!treatments.length && typeof user !== 'undefined' && user && user.role === 'admin') { _alerts.push({ icon: 'bi-plus-circle', text: 'Treatment catalog is empty', href: '/treatments/new' }); } %>
+        <% if (!_alerts.length) { %>
+          <div class="empty-state"><i class="bi bi-check-circle d-block"></i>All clear — nothing needs attention</div>
+        <% } else { %>
+          <ul class="list-group list-group-flush">
+            <% _alerts.forEach(al => { %>
+              <li class="list-group-item px-0"><a href="<%= al.href %>" class="text-decoration-none"><i class="bi <%= al.icon %> me-2"></i><%- al.text %></a></li>
+            <% }) %>
+          </ul>
+        <% } %>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-md-6">
+    <div class="card h-100">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-people me-1"></i>Recent Patients</span>
+        <a href="/patients" class="btn btn-sm btn-outline-primary">View All</a>
+      </div>
+      <div class="card-body">
+        <% if (patients.length === 0) { %>
+          <div class="empty-state"><i class="bi bi-people d-block"></i>No patients yet</div>
+        <% } else { %>
+          <div class="table-responsive">
+            <table class="table table-hover">
+              <thead><tr><th>Name</th><th>Phone</th><th>Email</th></tr></thead>
+              <tbody>
+                <% patients.slice(0, 5).forEach(p => { %>
+                  <tr>
+                    <td><span class="avatar"><%= (p.name || '?').charAt(0).toUpperCase() %></span><%= p.name %></td>
+                    <td><%= p.phone %></td>
+                    <td><%= p.email %></td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        <% } %>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card h-100">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-calendar-check me-1"></i>Upcoming Appointments</span>
+        <a href="/appointments" class="btn btn-sm btn-outline-primary">View All</a>
+      </div>
+      <div class="card-body">
+        <% if (appointments.length === 0) { %>
+          <div class="empty-state"><i class="bi bi-calendar-x d-block"></i>No appointments</div>
+        <% } else { %>
+          <div class="table-responsive">
+            <table class="table table-hover">
+              <thead><tr><th>Patient</th><th>Doctor</th><th>Date</th><th>Status</th></tr></thead>
+              <tbody>
+                <% appointments.slice(0, 5).forEach(a => { %>
+                  <tr>
+                    <td><%= a.patient_name || 'N/A' %></td>
+                    <td><%= a.doctor_name || 'N/A' %></td>
+                    <td><%= a.appointment_date ? new Date(a.appointment_date).toLocaleDateString() : 'N/A' %></td>
+                    <td><span class="badge bg-<%= a.status === 'confirmed' ? 'success' : a.status === 'pending' ? 'warning' : 'danger' %>"><%= a.status %></span></td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        <% } %>
+      </div>
+    </div>
+  </div>
+</div>

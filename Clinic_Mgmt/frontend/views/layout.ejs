@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Clinic Management System</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%230d6efd'/%3E%3Cstop offset='1' stop-color='%236610f2'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='14' fill='url(%23g)'/%3E%3Cpath d='M36 14h-8v14H14v8h14v14h8V36h14v-8H36z' fill='white'/%3E%3C/svg%3E">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <script>
+    try {
+      document.documentElement.setAttribute('data-bs-theme', localStorage.getItem('clinic-bs') || 'light');
+      document.documentElement.setAttribute('data-accent', localStorage.getItem('clinic-accent') || 'blue');
+    } catch (e) {}
+  </script>
+</head>
+<body>
+  <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+  <aside class="app-sidebar">
+    <a class="sidebar-brand" href="/dashboard">
+      <span class="sidebar-logo"><i class="bi bi-hospital"></i></span>
+      <span>
+        <span class="sidebar-brand-name"><%= (typeof clinic !== 'undefined' && clinic.clinic_name) || 'Clinic Management' %></span><br>
+        <span class="sidebar-brand-sub">Multi-Speciality</span>
+      </span>
+    </a>
+    <nav class="sidebar-nav">
+      <form action="/search" method="GET" class="px-1 pb-1">
+        <input type="text" name="q" class="form-control form-control-sm sidebar-search" placeholder="Search patients, bills...">
+      </form>
+      <div class="sidebar-section">Overview</div>
+      <a class="sidebar-link" href="/dashboard"><i class="bi bi-speedometer2"></i>Dashboard</a>
+      <div class="sidebar-section">Manage</div>
+      <a class="sidebar-link" href="/patients"><i class="bi bi-people"></i>Patients</a>
+      <a class="sidebar-link" href="/doctors"><i class="bi bi-person-badge"></i>Doctors</a>
+      <a class="sidebar-link" href="/appointments"><i class="bi bi-calendar-check"></i>Appointments</a>
+      <a class="sidebar-link" href="/calendar"><i class="bi bi-calendar3"></i>Calendar</a>
+      <a class="sidebar-link" href="/followups"><i class="bi bi-bell"></i>Follow-ups</a>
+      <a class="sidebar-link" href="/lab-orders"><i class="bi bi-eyedropper"></i>Lab Orders</a>
+      <a class="sidebar-link" href="/bills"><i class="bi bi-receipt"></i>Billing</a>
+      <% if (typeof user !== 'undefined' && user && user.role === 'admin') { %>
+        <div class="sidebar-section">Administration</div>
+        <a class="sidebar-link" href="/treatments"><i class="bi bi-capsule"></i>Treatments</a>
+        <a class="sidebar-link" href="/lab-tests"><i class="bi bi-flask"></i>Lab Tests</a>
+        <a class="sidebar-link" href="/masters"><i class="bi bi-gear"></i>Masters</a>
+        <a class="sidebar-link sub" href="/masters/specializations"><i class="bi bi-dot"></i>Specializations</a>
+        <a class="sidebar-link sub" href="/masters/categories"><i class="bi bi-dot"></i>Categories</a>
+        <a class="sidebar-link sub" href="/masters/statuses"><i class="bi bi-dot"></i>Status</a>
+        <a class="sidebar-link" href="/reports"><i class="bi bi-graph-up"></i>Reports</a>
+        <a class="sidebar-link" href="/expenses"><i class="bi bi-wallet2"></i>Expenses</a>
+        <a class="sidebar-link" href="/audit"><i class="bi bi-clock-history"></i>Audit Trail</a>
+        <a class="sidebar-link" href="/sessions"><i class="bi bi-shield-check"></i>Sessions</a>
+        <a class="sidebar-link" href="/settings"><i class="bi bi-sliders"></i>Settings</a>
+        <a class="sidebar-link" href="/users"><i class="bi bi-person-gear"></i>Users</a>
+      <% } %>
+      <div class="sidebar-section">Support</div>
+      <a class="sidebar-link" href="/help"><i class="bi bi-question-circle"></i>Help</a>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="sidebar-row">
+        <div class="dropdown">
+          <button class="theme-picker-btn" data-bs-toggle="dropdown" type="button" aria-expanded="false"><i class="bi bi-palette-fill"></i><span>Theme</span></button>
+          <ul class="dropdown-menu themeMenu"></ul>
+        </div>
+        <% if (typeof user !== 'undefined' && user) { %>
+          <span class="badge bg-<%= user.role === 'admin' ? 'danger' : 'success' %>"><%= user.role %></span>
+        <% } %>
+      </div>
+      <% if (typeof user !== 'undefined' && user) { %>
+        <div class="sidebar-user">
+          <span class="avatar"><%= user.username.charAt(0).toUpperCase() %></span>
+          <div class="sidebar-user-meta">
+            <div class="sidebar-user-name"><%= user.username %></div>
+          </div>
+          <a href="/change-password" class="btn btn-sm btn-outline-secondary" title="Change password"><i class="bi bi-key"></i></a>
+          <a href="/logout" class="btn btn-sm btn-outline-secondary" title="Logout"><i class="bi bi-box-arrow-right"></i></a>
+        </div>
+      <% } %>
+    </div>
+  </aside>
+  <div class="app-main">
+    <div class="app-topbar">
+      <button class="hamburger" id="sidebarToggle" type="button" title="Menu"><i class="bi bi-list"></i></button>
+      <a class="sidebar-brand" href="/dashboard" style="padding:0">
+        <span class="sidebar-logo" style="width:34px;height:34px;font-size:1.05rem;"><i class="bi bi-hospital"></i></span>
+        <span class="sidebar-brand-name">Clinic Management</span>
+      </a>
+      <div class="ms-auto dropdown">
+        <button class="hamburger" data-bs-toggle="dropdown" type="button" title="Change theme"><i class="bi bi-palette-fill"></i></button>
+        <ul class="dropdown-menu dropdown-menu-end themeMenu"></ul>
+      </div>
+    </div>
+    <div class="container-fluid px-3 px-lg-4 py-4 page-enter flex-grow-1">
+      <%- body %>
+    </div>
+    <footer class="text-center app-footer pb-4">
+      &copy; 2026 Clinic Management System <span class="mx-1">&bull;</span> v1.0
+    </footer>
+  </div>
+  <% if (typeof toast !== 'undefined' && toast) { %>
+    <div class="toast-fixed alert alert-success" role="alert"><i class="bi bi-check-circle-fill me-2"></i><%= toast %></div>
+  <% } %>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="/js/main.js"></script>
+</body>
+</html>

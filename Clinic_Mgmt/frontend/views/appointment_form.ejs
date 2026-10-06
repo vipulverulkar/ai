@@ -1,0 +1,123 @@
+<div class="row justify-content-center">
+  <div class="col-md-8">
+    <div class="card">
+      <div class="card-header form-card-header">
+        <h4 class="mb-0"><i class="bi bi-calendar-plus me-2"></i><%= appointment ? 'Edit Appointment' : 'Book New Appointment' %></h4>
+      </div>
+      <div class="card-body">
+        <form action="<%= appointment ? '/appointments/' + appointment.id : '/appointments' %>" method="POST">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <label class="form-label">Patient *</label>
+              <select name="patient_id" class="form-select" required>
+                <option value="">Select Patient</option>
+                <% patients.forEach(p => { %>
+                  <option value="<%= p.id %>" <%= appointment?.patient_id == p.id ? 'selected' : '' %>><%= p.name %> (<%= p.phone %>)</option>
+                <% }) %>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Doctor *</label>
+              <select name="doctor_id" class="form-select" required>
+                <option value="">Select Doctor</option>
+                <% doctors.forEach(d => { %>
+                  <option value="<%= d.id %>" <%= appointment?.doctor_id == d.id ? 'selected' : '' %>><%= d.name %> - <%= d.specialization %></option>
+                <% }) %>
+              </select>
+            </div>
+          </div>
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <label class="form-label">Treatment *</label>
+              <select name="treatment_id" class="form-select" id="treatmentSelect" required>
+                <option value="">Select Treatment</option>
+                <% treatments.forEach(t => { %>
+                  <option value="<%= t.id %>" data-cost="<%= t.cost %>" <%= appointment?.treatment_id == t.id ? 'selected' : '' %>><%= t.name %> (₹<%= t.cost %>, <%= t.duration_minutes %>min)</option>
+                <% }) %>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Appointment Date & Time *</label>
+              <input type="datetime-local" name="appointment_date" class="form-control" value="<%= appointment?.appointment_date ? appointment.appointment_date.slice(0, 16) : '' %>" required>
+            </div>
+          </div>
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <label class="form-label">Status</label>
+              <select name="status" class="form-select">
+                <% (typeof statuses !== 'undefined' ? statuses : []).forEach(s => { %>
+                  <option value="<%= s %>" <%= appointment?.status === s ? 'selected' : '' %>><%= s.charAt(0).toUpperCase() + s.slice(1) %></option>
+                <% }) %>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Treatment Cost (₹)</label>
+              <div class="form-control bg-light fw-bold text-success" id="treatmentCostDisplay">₹0.00</div>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Notes</label>
+            <textarea name="notes" class="form-control" rows="3"><%= appointment?.notes || '' %></textarea>
+          </div>
+          <div class="card mb-3">
+            <div class="card-header"><i class="bi bi-clipboard-pulse me-1"></i>Clinical Notes <span class="text-muted fw-normal small">(can also be filled during consult)</span></div>
+            <div class="card-body">
+              <div class="row mb-3">
+                <div class="col-md-6">
+                  <label class="form-label">Chief Complaint</label>
+                  <textarea name="chief_complaint" class="form-control" rows="2"><%= appointment?.chief_complaint || '' %></textarea>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label">Diagnosis</label>
+                  <textarea name="diagnosis" class="form-control" rows="2"><%= appointment?.diagnosis || '' %></textarea>
+                </div>
+              </div>
+              <div class="row mb-3">
+                <div class="col-md-3">
+                  <label class="form-label">BP</label>
+                  <input type="text" name="vitals_bp" class="form-control" placeholder="120/80" value="<%= appointment?.vitals_bp || '' %>">
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label">Sugar</label>
+                  <input type="text" name="vitals_sugar" class="form-control" placeholder="mg/dL" value="<%= appointment?.vitals_sugar || '' %>">
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label">Weight (kg)</label>
+                  <input type="text" name="vitals_weight" class="form-control" value="<%= appointment?.vitals_weight || '' %>">
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label">Temp (°F)</label>
+                  <input type="text" name="vitals_temp" class="form-control" value="<%= appointment?.vitals_temp || '' %>">
+                </div>
+              </div>
+              <div class="row">
+                <div class="col-md-6">
+                  <label class="form-label">Follow-up Date</label>
+                  <input type="date" name="follow_up_date" class="form-control" value="<%= appointment?.follow_up_date ? appointment.follow_up_date.slice(0, 10) : '' %>">
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">Save</button>
+            <a href="/appointments" class="btn btn-secondary">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+(function() {
+  var sel = document.getElementById('treatmentSelect');
+  var out = document.getElementById('treatmentCostDisplay');
+  function updateCost() {
+    var opt = sel.options[sel.selectedIndex];
+    var cost = opt && opt.dataset.cost ? parseFloat(opt.dataset.cost) : 0;
+    out.textContent = '₹' + (isNaN(cost) ? '0.00' : cost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+  }
+  sel.addEventListener('change', updateCost);
+  updateCost();
+})();
+</script>

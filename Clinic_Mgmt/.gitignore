@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+
+# Node.js
+node_modules/
+
+# Logs and OS files
+*.log
+/tmp/
+.DS_Store
+
+# Local secrets and runtime state
+.env
+.session_secret
+sessions.db

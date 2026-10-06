@@ -1,0 +1,11 @@
+{
+  "clinic_name": "Multi-Speciality Clinic",
+  "clinic_address": "123 Main Street",
+  "clinic_phone": "+91-9876543210",
+  "clinic_email": "care@clinic.example",
+  "tax_percent": "0",
+  "invoice_prefix": "INV",
+  "password_min_length": "8",
+  "rate_limit_max_attempts": "5",
+  "rate_limit_window_minutes": "5"
+}

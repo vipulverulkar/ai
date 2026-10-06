@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Dashboard – Expense Tracker{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <div>
+    <h1>Dashboard</h1>
+    <p class="sub">{{ today }} · every rupee, tracked</p>
+  </div>
+  <a class="btn primary" href="{{ url_for('transactions') }}">📋 View transactions</a>
+</div>
+
+<div class="grid cards">
+  <div class="stat accent-green">
+    <div class="stat-top"><span class="ic green">📈</span><span class="label">Today's income</span></div>
+    <strong class="green">₹{{ "%.2f"|format(today_income) }}</strong>
+  </div>
+  <div class="stat accent-red">
+    <div class="stat-top"><span class="ic red">📉</span><span class="label">Today's expense</span></div>
+    <strong class="red">₹{{ "%.2f"|format(today_expense) }}</strong>
+  </div>
+  <div class="stat accent-green">
+    <div class="stat-top"><span class="ic green">💵</span><span class="label">Month income</span></div>
+    <strong class="green">₹{{ "%.2f"|format(month_income) }}</strong>
+  </div>
+  <div class="stat accent-red">
+    <div class="stat-top"><span class="ic red">🧾</span><span class="label">Month expense</span></div>
+    <strong class="red">₹{{ "%.2f"|format(month_expense) }}</strong>
+  </div>
+  <div class="stat featured">
+    <div class="stat-top"><span class="ic amber">💰</span><span class="label">Total balance</span></div>
+    <strong class="bal">₹{{ "%.2f"|format(balance) }}</strong>
+    <div class="split">
+      <span><i class="dot in"></i>In ₹{{ "%.2f"|format(total_income) }}</span>
+      <span><i class="dot out"></i>Out ₹{{ "%.2f"|format(total_expense) }}</span>
+    </div>
+  </div>
+</div>
+
+<div class="grid two">
+  <section class="panel" id="add">
+    <div class="panel-head">
+      <span class="pic">✨</span>
+      <div><h2>Add Transaction</h2><p>Log income or spending in seconds</p></div>
+    </div>
+    <form id="add-form" method="post" action="{{ url_for('add_transaction') }}">
+      <div class="row">
+        <label>Amount (₹)<input type="number" step="0.01" min="0.01" name="amount" required placeholder="0.00"></label>
+        <label>Date<input type="date" name="date" value="{{ today }}" required></label>
+      </div>
+      <div class="segment">
+        <label><input type="radio" name="type" value="expense" checked> ➖ Expense</label>
+        <label><input type="radio" name="type" value="income"> ➕ Income</label>
+      </div>
+      <label>Category
+        <select name="category_id" required>
+          <option value="">— select —</option>
+          {% for c in categories %}
+          <option value="{{ c['id'] }}" data-type="{{ c['type'] }}">{{ c['name'] }} ({{ c['type'] }})</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Note<input type="text" name="note" placeholder="e.g. lunch, salary…" maxlength="200"></label>
+      <button class="btn primary block" type="submit">Add transaction</button>
+    </form>
+    <p class="hint">Need a new category? <a href="{{ url_for('categories') }}">Manage categories →</a></p>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <span class="pic">🧭</span>
+      <div><h2>Explore</h2><p>Jump to any section</p></div>
+    </div>
+    <div class="stack">
+      <a class="link-card" href="{{ url_for('transactions') }}">
+        <span class="em">📋</span>
+        <span><strong>Transactions</strong><small>Browse, filter, edit &amp; delete entries</small></span>
+        <span class="go">→</span>
+      </a>
+      <a class="link-card" href="{{ url_for('reports') }}">
+        <span class="em">📊</span>
+        <span><strong>Reports</strong><small>Daily &amp; monthly summaries with graphs</small></span>
+        <span class="go">→</span>
+      </a>
+      <a class="link-card" href="{{ url_for('categories') }}">
+        <span class="em">🏷️</span>
+        <span><strong>Categories</strong><small>Manage income &amp; expense groups</small></span>
+        <span class="go">→</span>
+      </a>
+    </div>
+  </section>
+</div>
+{% endblock %}

@@ -1,0 +1,32 @@
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+  <div>
+    <h1 class="page-title"><i class="bi bi-bell me-2"></i>Follow-ups <span class="badge bg-warning text-dark count-badge"><%= items.length %></span></h1>
+    <p class="page-subtitle">Overdue and upcoming patient follow-ups</p>
+  </div>
+</div>
+
+<div class="card table-card">
+  <div class="card-body">
+    <div class="table-responsive">
+      <table class="table table-striped table-hover" id="followupsTable" data-paginate data-page-size="10">
+        <thead><tr><th>Due</th><th>Patient</th><th>Doctor</th><th>Visit Date</th><th>Diagnosis</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+          <% items.forEach(a => { %>
+            <tr>
+              <td><% if (a.overdue) { %><span class="badge bg-danger">Overdue</span><% } %><%= a.follow_up_date ? new Date(a.follow_up_date).toLocaleDateString() : '' %></td>
+              <td><strong><%= a.patient_name || 'N/A' %></strong></td>
+              <td><%= a.doctor_name || 'N/A' %></td>
+              <td><%= a.appointment_date ? new Date(a.appointment_date).toLocaleDateString() : '' %></td>
+              <td><%= a.diagnosis || '' %></td>
+              <td><span class="badge bg-<%= a.status === 'confirmed' ? 'success' : a.status === 'pending' ? 'warning' : 'secondary' %>"><%= a.status %></span></td>
+              <td class="text-end"><a href="/appointments/<%= a.id %>/consult" class="btn btn-sm btn-outline-success">Consult</a></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+      <% if (items.length === 0) { %>
+        <div class="empty-state"><i class="bi bi-check-circle d-block"></i>No follow-ups due</div>
+      <% } %>
+    </div>
+  </div>
+</div>

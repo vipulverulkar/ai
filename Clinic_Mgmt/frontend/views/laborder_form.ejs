@@ -1,0 +1,191 @@
+<div class="row justify-content-center">
+  <div class="col-md-9">
+    <div class="card">
+      <div class="card-header form-card-header">
+        <h4 class="mb-0"><i class="bi bi-eyedropper me-2"></i>New Lab Order</h4>
+      </div>
+      <div class="card-body">
+        <% if (error) { %>
+          <div class="alert alert-danger d-flex align-items-center" role="alert">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i><%= error %>
+          </div>
+        <% } %>
+        <form action="/lab-orders" method="POST">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <label class="form-label">Patient *</label>
+              <select name="patient_id" id="labPatient" class="form-select" required>
+                <option value="">Select Patient</option>
+                <% patients.forEach(p => { %>
+                  <option value="<%= p.id %>" <%= String(p.id) === selectedPatientId ? 'selected' : '' %>><%= p.name %> (<%= p.phone %>)</option>
+                <% }) %>
+              </select>
+              <div class="form-text" id="patientInfo"></div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Priority</label>
+              <select name="priority" class="form-select">
+                <option value="routine">Routine</option>
+                <option value="urgent">Urgent</option>
+              </select>
+            </div>
+          </div>
+          <div class="row mb-3">
+            <div class="col-md-12">
+              <label class="form-label">Linked Visit <span class="text-muted">(optional)</span></label>
+              <select name="appointment_id" id="labAppointment" class="form-select">
+                <option value="">No linked visit</option>
+                <% appointments.forEach(a => { %>
+                  <option value="<%= a.id %>" data-patient="<%= a.patient_id %>"><%= a.appointment_date ? new Date(a.appointment_date).toLocaleDateString() : '' %> &mdash; <%= a.patient_name || '' %> (<%= a.doctor_name || '' %>)</option>
+                <% }) %>
+              </select>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Tests * (<span id="labCount">0</span> selected, total: <strong id="labTotal">&#8377;0</strong>)</label>
+            <% const _cats = [...new Set(tests.map(t => t.category || 'General'))].sort(); %>
+            <div class="d-flex flex-wrap gap-2 mb-2" id="labCatChips">
+              <button type="button" class="btn btn-sm btn-primary" data-cat="">All</button>
+              <% _cats.forEach(c => { %>
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-cat="<%= c %>"><%= c %></button>
+              <% }) %>
+              <button type="button" class="btn btn-sm btn-outline-success ms-auto" id="labSelectAll">Select visible</button>
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="labClear">Clear</button>
+            </div>
+            <input type="text" id="labTestSearch" class="form-control table-search mb-2" placeholder="Filter tests by name...">
+            <div class="row g-2" id="labTestGrid">
+              <% tests.forEach(t => { %>
+                <div class="col-md-6 lab-test-card" data-cat="<%= t.category || 'General' %>" data-name="<%= t.name.toLowerCase() %>">
+                  <label class="test-pick">
+                    <input type="checkbox" name="test_ids" value="<%= t.id %>" data-price="<%= t.price %>" data-label="<%= t.name %>" class="form-check-input lab-test-check">
+                    <div class="flex-grow-1">
+                      <strong><%= t.name %></strong><br>
+                      <small class="text-muted"><%= t.category || 'General' %> &bull; &#8377;<%= t.price %> &bull; <%= t.turnaround_hours || 24 %>h</small>
+                    </div>
+                  </label>
+                </div>
+              <% }) %>
+            </div>
+            <div class="d-flex align-items-center gap-2 mt-2" id="labPager">
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="labPrev">&lsaquo; Prev</button>
+              <span class="text-muted small" id="labPageInfo"></span>
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="labNext">Next &rsaquo;</button>
+              <span class="text-muted small ms-auto">6 per page</span>
+            </div>
+            <% if (!tests.length) { %><p class="text-muted mt-2 mb-0">No active tests. Ask an admin to add some in Lab Tests.</p><% } %>
+            <ul class="list-group mt-2" id="labBreakdown"></ul>
+          </div>
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">Create Order</button>
+            <a href="/lab-orders" class="btn btn-secondary">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+(function() {
+  var patients = <%- JSON.stringify(patients) %>;
+  var patientSel = document.getElementById('labPatient');
+  var apptSel = document.getElementById('labAppointment');
+  var info = document.getElementById('patientInfo');
+  var total = document.getElementById('labTotal');
+  var count = document.getElementById('labCount');
+  var breakdown = document.getElementById('labBreakdown');
+  var search = document.getElementById('labTestSearch');
+  var grid = document.getElementById('labTestGrid');
+  var activeCat = '';
+  var PAGE_SIZE = 6, labPage = 1;
+
+  function syncPatient() {
+    var pid = patientSel.value;
+    var p = patients.find(function(x) { return String(x.id) === String(pid); });
+    info.textContent = p
+      ? [p.phone, p.gender, p.blood_group ? 'Blood: ' + p.blood_group : null].filter(Boolean).join('  •  ')
+      : '';
+    Array.from(apptSel.options).forEach(function(o) {
+      if (!o.value) return;
+      o.hidden = !!(pid && o.getAttribute('data-patient') !== String(pid));
+    });
+    if (apptSel.selectedOptions.length && apptSel.selectedOptions[0].hidden) apptSel.value = '';
+  }
+  function checkedBoxes() {
+    return Array.from(grid.querySelectorAll('.lab-test-check:checked'));
+  }
+  function update() {
+    var sum = 0, html = '';
+    checkedBoxes().forEach(function(c) {
+      var price = parseFloat(c.getAttribute('data-price')) || 0;
+      sum += price;
+      html += '<li class="list-group-item d-flex justify-content-between align-items-center px-2 py-1">' +
+        '<span>' + c.getAttribute('data-label') + '</span>' +
+        '<strong>\u20B9' + price.toLocaleString('en-IN') + '</strong></li>';
+    });
+    total.textContent = '\u20B9' + sum.toLocaleString('en-IN');
+    count.textContent = checkedBoxes().length;
+    breakdown.innerHTML = html;
+  }
+  function matchingCards() {
+    var term = (search.value || '').toLowerCase();
+    return Array.from(grid.querySelectorAll('.lab-test-card')).filter(function(card) {
+      var matchCat = !activeCat || card.getAttribute('data-cat') === activeCat;
+      var matchTerm = !term || card.getAttribute('data-name').indexOf(term) !== -1;
+      return matchCat && matchTerm;
+    });
+  }
+  function renderPage() {
+    var cards = Array.from(grid.querySelectorAll('.lab-test-card'));
+    var matched = matchingCards();
+    var pages = Math.max(1, Math.ceil(matched.length / PAGE_SIZE));
+    labPage = Math.min(Math.max(labPage, 1), pages);
+    cards.forEach(function(card) { card.style.display = 'none'; });
+    matched.slice((labPage - 1) * PAGE_SIZE, labPage * PAGE_SIZE).forEach(function(card) {
+      card.style.display = '';
+    });
+    document.getElementById('labPageInfo').textContent =
+      'Page ' + labPage + ' of ' + pages + ' (' + matched.length + ' tests)';
+    document.getElementById('labPrev').disabled = labPage <= 1;
+    document.getElementById('labNext').disabled = labPage >= pages;
+    document.getElementById('labPager').style.display = cards.length ? '' : 'none';
+  }
+  function filterTests() {
+    labPage = 1;
+    renderPage();
+  }
+  document.querySelectorAll('#labCatChips [data-cat]').forEach(function(chip) {
+    chip.addEventListener('click', function() {
+      activeCat = chip.getAttribute('data-cat');
+      document.querySelectorAll('#labCatChips [data-cat]').forEach(function(c) {
+        c.className = 'btn btn-sm ' + (c === chip ? 'btn-primary' : 'btn-outline-secondary');
+      });
+      filterTests();
+    });
+  });
+  document.getElementById('labSelectAll').addEventListener('click', function() {
+    Array.from(grid.querySelectorAll('.lab-test-card')).forEach(function(card) {
+      if (card.style.display !== 'none') card.querySelector('.lab-test-check').checked = true;
+    });
+    update();
+  });
+  document.getElementById('labClear').addEventListener('click', function() {
+    checkedBoxes().forEach(function(c) { c.checked = false; });
+    update();
+  });
+  grid.addEventListener('change', update);
+  search.addEventListener('input', filterTests);
+  patientSel.addEventListener('change', syncPatient);
+  document.getElementById('labPrev').addEventListener('click', function() { labPage--; renderPage(); });
+  document.getElementById('labNext').addEventListener('click', function() { labPage++; renderPage(); });
+  patientSel.closest('form').addEventListener('submit', function(e) {
+    if (!checkedBoxes().length) {
+      e.preventDefault();
+      alert('Please select at least one lab test.');
+    }
+  });
+  syncPatient();
+  update();
+  renderPage();
+})();
+</script>

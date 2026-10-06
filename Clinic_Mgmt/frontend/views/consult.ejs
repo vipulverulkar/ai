@@ -1,0 +1,131 @@
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+  <a href="/appointments" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Appointments</a>
+  <button class="btn btn-sm btn-outline-primary" onclick="window.print()"><i class="bi bi-printer me-1"></i>Print Rx</button>
+</div>
+
+<% if (error) { %>
+  <div class="alert alert-danger d-flex align-items-center" role="alert">
+    <i class="bi bi-exclamation-triangle-fill me-2"></i><%= error %>
+  </div>
+<% } %>
+
+<div class="card mb-4">
+  <div class="card-body d-flex flex-wrap gap-4 align-items-center">
+    <span class="avatar avatar-green" style="width:48px;height:48px;font-size:1.2rem;"><%= ((appointment.patient_name || '?')).charAt(0).toUpperCase() %></span>
+    <div class="flex-grow-1">
+      <h4 class="mb-0"><%= appointment.patient_name || 'N/A' %></h4>
+      <span class="text-muted"><%= appointment.doctor_name || '' %> &bull; <%= appointment.treatment_name || '' %> &bull; <%= appointment.appointment_date ? new Date(appointment.appointment_date).toLocaleString() : '' %></span>
+    </div>
+    <span class="badge bg-<%= appointment.status === 'confirmed' ? 'success' : appointment.status === 'pending' ? 'warning' : 'danger' %>"><%= appointment.status %></span>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-6">
+    <div class="card h-100">
+      <div class="card-header form-card-header"><h5 class="mb-0"><i class="bi bi-clipboard-pulse me-2"></i>Clinical Notes</h5></div>
+      <div class="card-body">
+        <form action="/appointments/<%= appointment.id %>/consult" method="POST">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <label class="form-label">Chief Complaint</label>
+              <textarea name="chief_complaint" class="form-control" rows="2"><%= appointment.chief_complaint || '' %></textarea>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Diagnosis</label>
+              <textarea name="diagnosis" class="form-control" rows="2"><%= appointment.diagnosis || '' %></textarea>
+            </div>
+          </div>
+          <div class="row mb-3">
+            <div class="col-6 col-md-3">
+              <label class="form-label">BP</label>
+              <input type="text" name="vitals_bp" class="form-control" placeholder="120/80" value="<%= appointment.vitals_bp || '' %>">
+            </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label">Sugar</label>
+              <input type="text" name="vitals_sugar" class="form-control" placeholder="mg/dL" value="<%= appointment.vitals_sugar || '' %>">
+            </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label">Weight (kg)</label>
+              <input type="text" name="vitals_weight" class="form-control" value="<%= appointment.vitals_weight || '' %>">
+            </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label">Temp (°F)</label>
+              <input type="text" name="vitals_temp" class="form-control" value="<%= appointment.vitals_temp || '' %>">
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Follow-up Date</label>
+            <input type="date" name="follow_up_date" class="form-control" value="<%= appointment.follow_up_date ? appointment.follow_up_date.slice(0, 10) : '' %>">
+          </div>
+          <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Save Notes</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card mb-4">
+      <div class="card-header"><i class="bi bi-capsule me-1"></i>Prescription <span class="badge bg-primary count-badge"><%= prescriptions.length %></span></div>
+      <div class="card-body">
+        <% if (!prescriptions.length) { %>
+          <p class="text-muted mb-0">No medicines prescribed yet</p>
+        <% } else { %>
+          <div class="table-responsive">
+            <table class="table table-hover">
+              <thead><tr><th>Medicine</th><th>Dosage</th><th>Frequency</th><th>Days</th><th></th></tr></thead>
+              <tbody>
+                <% prescriptions.forEach(rx => { %>
+                  <tr title="<%= rx.instructions || '' %>">
+                    <td><strong><%= rx.medicine %></strong><% if (rx.instructions) { %><br><small class="text-muted"><%= rx.instructions %></small><% } %></td>
+                    <td><%= rx.dosage || '' %></td>
+                    <td><%= rx.frequency || '' %></td>
+                    <td><%= rx.duration_days || '' %></td>
+                    <td class="text-end">
+                      <form action="/prescriptions/<%= rx.id %>/delete" method="POST" class="d-inline" onsubmit="return confirm('Remove this medicine?')">
+                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                        <input type="hidden" name="appointment_id" value="<%= appointment.id %>">
+                        <button type="submit" class="btn btn-sm btn-outline-danger" title="Remove"><i class="bi bi-trash"></i></button>
+                      </form>
+                    </td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        <% } %>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header form-card-header"><h5 class="mb-0"><i class="bi bi-plus-circle me-2"></i>Add Medicine</h5></div>
+      <div class="card-body">
+        <form action="/appointments/<%= appointment.id %>/prescriptions" method="POST" class="row g-2 align-items-end">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <div class="col-md-6">
+            <label class="form-label">Medicine *</label>
+            <input type="text" name="medicine" class="form-control" required>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Dosage</label>
+            <input type="text" name="dosage" class="form-control" placeholder="500mg">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Frequency</label>
+            <input type="text" name="frequency" class="form-control" placeholder="1-0-1">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Days</label>
+            <input type="number" name="duration_days" class="form-control" min="1">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Instructions</label>
+            <input type="text" name="instructions" class="form-control" placeholder="After food">
+          </div>
+          <div class="col-md-3">
+            <button type="submit" class="btn btn-primary w-100"><i class="bi bi-plus-lg me-1"></i>Add</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>

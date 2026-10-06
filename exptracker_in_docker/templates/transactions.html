@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}Transactions – Expense Tracker{% endblock %}
+{% macro tx_url(p) %}{{ url_for('transactions', type=f_type, category=f_category, month=f_month, q=f_search, per_page=per_page, page=p) }}{% endmacro %}
+{% block content %}
+
+<div class="page-head">
+  <div>
+    <h1>Transactions</h1>
+    <p class="sub">Filter, edit or delete any entry</p>
+  </div>
+  <a class="btn primary" href="{{ url_for('index') }}#add">＋ Add transaction</a>
+</div>
+
+<section class="panel">
+  <div class="panel-head">
+    <span class="pic">🔎</span>
+    <div><h2>Filter Transactions</h2><p>Slice the list below</p></div>
+  </div>
+  <form method="get" action="{{ url_for('transactions') }}" class="filters">
+    <input type="hidden" name="per_page" value="{{ per_page }}">
+    <div class="row">
+      <label>Type
+        <select name="type">
+          <option value="all" {% if f_type=='all' %}selected{% endif %}>All</option>
+          <option value="income" {% if f_type=='income' %}selected{% endif %}>Income</option>
+          <option value="expense" {% if f_type=='expense' %}selected{% endif %}>Expense</option>
+        </select>
+      </label>
+      <label>Category
+        <select name="category">
+          <option value="all">All</option>
+          {% for c in categories %}
+          <option value="{{ c['id'] }}" {% if f_category==c['id']|string %}selected{% endif %}>{{ c['name'] }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Month<input type="month" name="month" value="{{ f_month }}"></label>
+      <label>Search<input type="text" name="q" value="{{ f_search }}" placeholder="note or category"></label>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button class="btn primary" type="submit" style="flex:1">Apply filters</button>
+      <a class="btn ghost" href="{{ url_for('transactions') }}">Clear</a>
+    </div>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span class="pic">📋</span>
+    <div><h2>Transactions</h2><p>Most recent first</p></div>
+    <span class="spacer"></span>
+    <span class="count-pill">{{ total }} total</span>
+  </div>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Date</th><th>Type</th><th>Category</th><th>Note</th><th class="num">Amount</th><th>Actions</th></tr></thead>
+    <tbody>
+    {% for t in transactions %}
+      <tr>
+        <td style="white-space:nowrap">{{ t['date'] }}</td>
+        <td><span class="badge {{ t['type'] }}">{{ t['type'] }}</span></td>
+        <td class="cat-name">{{ t['category_name'] }}</td>
+        <td class="note-cell" title="{{ t['note'] or '' }}">{{ t['note'] or '—' }}</td>
+        <td class="num {{ t['type'] }}">{{ '+' if t['type']=='income' else '−' }}₹{{ "%.2f"|format(t['amount']) }}</td>
+        <td class="actions">
+          <a class="btn small" href="{{ url_for('edit_transaction', tx_id=t['id']) }}">Edit</a>
+          <form method="post" action="{{ url_for('delete_transaction', tx_id=t['id']) }}" onsubmit="return confirm('Delete this transaction?')">
+            <button class="btn small danger" type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="empty"><span class="big">🪹</span>No transactions found.<br>Adjust the filters or add one from the dashboard.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <div class="pager">
+    <span class="pager-info">Showing {{ start }}–{{ end }} of {{ total }}</span>
+    <form method="get" action="{{ url_for('transactions') }}" class="per-page">
+      <input type="hidden" name="type" value="{{ f_type }}">
+      <input type="hidden" name="category" value="{{ f_category }}">
+      <input type="hidden" name="month" value="{{ f_month }}">
+      <input type="hidden" name="q" value="{{ f_search }}">
+      <label>Per page
+        <select name="per_page" onchange="this.form.submit()">
+          {% for n in [10, 25, 50, 100] %}
+          <option value="{{ n }}" {% if per_page == n %}selected{% endif %}>{{ n }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </form>
+    <div class="pager-links">
+      {% if page > 1 %}
+      <a class="btn small" href="{{ tx_url(page - 1) }}">← Prev</a>
+      {% endif %}
+      {% for p in pages %}
+        {% if p %}
+        <a class="btn small {% if p == page %}primary{% endif %}" href="{{ tx_url(p) }}">{{ p }}</a>
+        {% else %}
+        <span class="ellipsis">…</span>
+        {% endif %}
+      {% endfor %}
+      {% if page < total_pages %}
+      <a class="btn small" href="{{ tx_url(page + 1) }}">Next →</a>
+      {% endif %}
+    </div>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,9 @@
+{
+  "specialization": ["Cardiology", "Neurology", "Orthopedics", "Pediatrics", "Dermatology", "Gynecology", "General Medicine", "Psychiatry", "ENT", "Ophthalmology"],
+  "treatment_category": ["Consultation", "Diagnostic", "Surgical", "Therapy", "Medication", "Follow-up"],
+  "appointment_status": ["pending", "confirmed", "completed", "cancelled"],
+  "gender": ["Male", "Female", "Other"],
+  "blood_group": ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"],
+  "user_role": ["admin", "staff"],
+  "payment_method": ["Cash", "Card", "UPI"]
+}

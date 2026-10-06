@@ -1,0 +1,12 @@
+[
+  {"id": "ocean-light", "name": "Ocean Light", "icon": "bi-sun", "bs": "light", "accent": "blue"},
+  {"id": "ocean-dark", "name": "Ocean Dark", "icon": "bi-moon-stars", "bs": "dark", "accent": "blue"},
+  {"id": "teal-light", "name": "Teal Light", "icon": "bi-brightness-high", "bs": "light", "accent": "teal"},
+  {"id": "forest-dark", "name": "Forest Dark", "icon": "bi-tree", "bs": "dark", "accent": "green"},
+  {"id": "royal-dark", "name": "Royal Dark", "icon": "bi-gem", "bs": "dark", "accent": "violet"},
+  {"id": "sunset-light", "name": "Sunset Light", "icon": "bi-sunset", "bs": "light", "accent": "orange"},
+  {"id": "rose-light", "name": "Rose Light", "icon": "bi-heart", "bs": "light", "accent": "rose"},
+  {"id": "graphite-dark", "name": "Graphite Dark", "icon": "bi-circle-half", "bs": "dark", "accent": "slate"},
+  {"id": "cyan-dark", "name": "Cyan Dark", "icon": "bi-droplet", "bs": "dark", "accent": "cyan"},
+  {"id": "mint-light", "name": "Mint Light", "icon": "bi-flower1", "bs": "light", "accent": "mint"}
+]

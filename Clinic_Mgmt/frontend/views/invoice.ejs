@@ -1,0 +1,140 @@
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+  <a href="/bills" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>All Bills</a>
+  <button class="btn btn-sm btn-outline-primary" onclick="window.print()"><i class="bi bi-printer me-1"></i>Print Invoice</button>
+</div>
+
+<% if (error) { %>
+  <div class="alert alert-danger d-flex align-items-center" role="alert">
+    <i class="bi bi-exclamation-triangle-fill me-2"></i><%= error %>
+  </div>
+<% } %>
+
+<div class="row justify-content-center">
+  <div class="col-lg-9">
+    <div class="card mb-4">
+      <div class="card-body p-4 p-md-5">
+        <div class="d-flex justify-content-between flex-wrap gap-3 mb-4">
+          <div>
+            <h3 class="fw-bold mb-1"><%= (typeof clinic !== 'undefined' && clinic.clinic_name) || 'Clinic' %></h3>
+            <div class="text-muted"><%= (typeof clinic !== 'undefined' && clinic.clinic_address) || '' %></div>
+            <div class="text-muted"><%= (typeof clinic !== 'undefined' && clinic.clinic_phone) || '' %> &bull; <%= (typeof clinic !== 'undefined' && clinic.clinic_email) || '' %></div>
+          </div>
+          <div class="text-md-end">
+            <h4 class="mb-1">INVOICE</h4>
+            <div class="fw-bold text-primary bill-no"><%= bill.bill_no %></div>
+            <div class="text-muted"><%= bill.created_at ? new Date(bill.created_at).toLocaleString() : '' %></div>
+            <span class="badge bg-<%= bill.status === 'paid' ? 'success' : bill.status === 'partial' ? 'warning' : 'danger' %>"><%= bill.status %></span>
+          </div>
+        </div>
+        <div class="row mb-4">
+          <div class="col-md-6">
+            <div class="text-muted small text-uppercase fw-bold">Billed To</div>
+            <div class="fw-bold"><%= bill.patient_name || 'N/A' %></div>
+          </div>
+          <div class="col-md-6 text-md-end">
+            <div class="text-muted small text-uppercase fw-bold">Attending Doctor</div>
+            <div class="fw-bold"><%= bill.doctor_name || 'N/A' %></div>
+          </div>
+        </div>
+        <div class="table-responsive">
+          <table class="table">
+            <thead><tr><th>Description</th><th class="text-end">Amount (&#8377;)</th></tr></thead>
+            <tbody>
+              <tr><td>Consultation &mdash; <%= bill.doctor_name || '' %></td><td class="text-end">&#8377;<%= bill.consultation_fee %></td></tr>
+              <tr><td>Treatment &mdash; <%= bill.treatment_name || '' %></td><td class="text-end">&#8377;<%= bill.treatment_cost %></td></tr>
+              <tr><td colspan="2"></td></tr>
+              <tr><td class="text-end text-muted">Tax (<%= bill.tax_percent %>%)</td><td class="text-end">&#8377;<%= bill.tax_amount %></td></tr>
+              <% if (bill.discount_amount > 0) { %>
+              <tr><td class="text-end text-muted">Discount</td><td class="text-end text-success">-&#8377;<%= bill.discount_amount %></td></tr>
+              <% } %>
+              <tr><td class="text-end fw-bold">Total</td><td class="text-end fw-bold fs-5">&#8377;<%= bill.total %></td></tr>
+              <tr><td class="text-end text-muted">Paid</td><td class="text-end text-success">&#8377;<%= bill.amount_paid %></td></tr>
+              <tr><td class="text-end fw-bold">Balance Due</td><td class="text-end fw-bold text-danger">&#8377;<%= bill.balance %></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="card mb-4">
+      <div class="card-header"><i class="bi bi-cash-coin me-1"></i>Payments (<%= bill.payments.length %>)</div>
+      <div class="card-body">
+        <% if (!bill.payments.length) { %>
+          <p class="text-muted mb-0">No payments recorded yet</p>
+        <% } else { %>
+          <div class="table-responsive">
+            <table class="table table-hover">
+              <thead><tr><th>Date</th><th>Amount (&#8377;)</th><th>Method</th><th>Note</th><th></th></tr></thead>
+              <tbody>
+                <% bill.payments.forEach(p => { %>
+                  <tr>
+                    <td><%= p.created_at ? new Date(p.created_at).toLocaleString() : '' %></td>
+                    <td>&#8377;<%= p.amount %></td>
+                    <td><span class="badge bg-info text-dark"><%= p.method %></span></td>
+                    <td><%= p.note || '' %></td>
+                    <td class="text-end"><a href="/bills/<%= bill.id %>/receipts/<%= p.id %>" class="btn btn-sm btn-outline-primary" title="Receipt"><i class="bi bi-printer"></i></a></td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        <% } %>
+      </div>
+    </div>
+
+    <% if (typeof user !== 'undefined' && user && user.role === 'admin' && bill.status !== 'cancelled') { %>
+    <div class="card mb-4">
+      <div class="card-header"><i class="bi bi-shield-lock me-1"></i>Admin Billing Actions</div>
+      <div class="card-body">
+        <% if (bill.amount_paid == 0) { %>
+        <form action="/bills/<%= bill.id %>/discount" method="POST" class="row g-2 align-items-end mb-3">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <div class="col-md-6">
+            <label class="form-label">Discount (&#8377;)</label>
+            <input type="number" name="discount_amount" class="form-control" min="0" step="0.01" value="<%= bill.discount_amount || 0 %>">
+          </div>
+          <div class="col-md-3">
+            <button type="submit" class="btn btn-outline-warning w-100">Apply</button>
+          </div>
+        </form>
+        <form action="/bills/<%= bill.id %>/void" method="POST" class="d-inline" onsubmit="return confirm('Void this bill? This cannot be undone.')">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <button type="submit" class="btn btn-outline-danger"><i class="bi bi-x-circle me-1"></i>Void Bill</button>
+        </form>
+        <% } else { %>
+        <p class="text-muted mb-0">Discount / void unavailable once payments are recorded.</p>
+        <% } %>
+      </div>
+    </div>
+    <% } %>
+    <% if (bill.balance > 0) { %>
+    <div class="card">
+      <div class="card-header form-card-header"><h5 class="mb-0"><i class="bi bi-plus-circle me-2"></i>Record Payment</h5></div>
+      <div class="card-body">
+        <form action="/bills/<%= bill.id %>/pay" method="POST" class="row g-2 align-items-end">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <div class="col-md-4">
+            <label class="form-label">Amount (&#8377;) *</label>
+            <input type="number" name="amount" class="form-control" min="0.01" step="0.01" max="<%= bill.balance %>" value="<%= bill.balance %>" required>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Method</label>
+            <select name="method" class="form-select">
+              <% (typeof methods !== 'undefined' ? methods : []).forEach(m => { %>
+                <option value="<%= m %>"><%= m %></option>
+              <% }) %>
+            </select>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Note</label>
+            <input type="text" name="note" class="form-control" placeholder="Optional">
+          </div>
+          <div class="col-md-2">
+            <button type="submit" class="btn btn-primary w-100"><i class="bi bi-check-lg me-1"></i>Pay</button>
+          </div>
+        </form>
+      </div>
+    </div>
+    <% } %>
+  </div>
+</div>

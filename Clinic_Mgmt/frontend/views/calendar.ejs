@@ -1,0 +1,63 @@
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+  <div>
+    <h1 class="page-title"><i class="bi bi-calendar3 me-2"></i>Calendar</h1>
+    <p class="page-subtitle">Appointment load by day</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="/calendar?month=<%= prev %>" class="btn btn-outline-secondary"><i class="bi bi-chevron-left"></i></a>
+    <a href="/calendar" class="btn btn-outline-primary">This Month</a>
+    <a href="/calendar?month=<%= next %>" class="btn btn-outline-secondary"><i class="bi bi-chevron-right"></i></a>
+  </div>
+</div>
+
+<div class="card mb-4">
+  <div class="card-header text-center fw-bold"><%= monthLabel %></div>
+  <div class="card-body">
+    <div class="table-responsive">
+      <table class="table table-bordered text-center mb-0">
+        <thead><tr><th>Sun</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th></tr></thead>
+        <tbody>
+          <% weeks.forEach(week => { %>
+            <tr>
+              <% week.forEach(day => { %>
+                <td class="<%= day.today ? 'bg-primary bg-opacity-10' : '' %>" style="min-width:110px;vertical-align:top;">
+                  <% if (day.date) { %>
+                    <a href="/calendar?month=<%= month %>&day=<%= day.date %>" class="text-decoration-none fw-bold"><%= day.num %></a>
+                    <% (day.items || []).slice(0, 3).forEach(a => { %>
+                      <div><span class="badge bg-<%= a.status === 'confirmed' ? 'success' : a.status === 'pending' ? 'warning' : 'secondary' %>"><%= (a.appointment_date || '').slice(11, 16) %> <%= (a.patient_name || '').split(' ')[0] %></span></div>
+                    <% }) %>
+                    <% if ((day.items || []).length > 3) { %>
+                      <div><a href="/calendar?month=<%= month %>&day=<%= day.date %>" class="small">+<%= day.items.length - 3 %> more</a></div>
+                    <% } %>
+                  <% } %>
+                </td>
+              <% }) %>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<% if (selectedDay) { %>
+<div class="card">
+  <div class="card-header"><i class="bi bi-calendar-day me-1"></i>Appointments on <%= selectedDay %></div>
+  <div class="card-body">
+    <% if (!dayItems.length) { %>
+      <p class="text-muted mb-0">Nothing scheduled this day</p>
+    <% } else { %>
+      <ul class="list-group list-group-flush">
+        <% dayItems.forEach(a => { %>
+          <li class="list-group-item px-0 d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <span><strong><%= (a.appointment_date || '').slice(11, 16) %></strong> &mdash; <%= a.patient_name || '' %> <span class="text-muted">with <%= a.doctor_name || '' %></span>
+              <% if (a.token_no) { %><span class="badge bg-primary ms-1">#<%= a.token_no %></span><% } %></span>
+            <span><span class="badge bg-<%= a.status === 'confirmed' ? 'success' : a.status === 'pending' ? 'warning' : 'secondary' %> me-2"><%= a.status %></span>
+              <a href="/appointments/<%= a.id %>/consult" class="btn btn-sm btn-outline-success">Consult</a></span>
+          </li>
+        <% }) %>
+      </ul>
+    <% } %>
+  </div>
+</div>
+<% } %>

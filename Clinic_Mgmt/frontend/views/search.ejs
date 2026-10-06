@@ -1,0 +1,80 @@
+<div class="mb-4">
+  <h1 class="page-title"><i class="bi bi-search me-2"></i>Search</h1>
+  <p class="page-subtitle">Across patients, doctors, treatments and bills</p>
+</div>
+
+<div class="card mb-4">
+  <div class="card-body">
+    <form action="/search" method="GET" class="row g-2">
+      <div class="col-md-10">
+        <input type="text" name="q" class="form-control" placeholder="Type at least 2 characters..." value="<%= q %>" autofocus>
+      </div>
+      <div class="col-md-2">
+        <button type="submit" class="btn btn-primary w-100"><i class="bi bi-search me-1"></i>Go</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<% if (q && q.length >= 2) { %>
+<div class="row g-3">
+  <div class="col-md-6">
+    <div class="card h-100">
+      <div class="card-header"><i class="bi bi-people me-1"></i>Patients (<%= results.patients.length %>)</div>
+      <div class="card-body">
+        <% if (!results.patients.length) { %><p class="text-muted mb-0">No matches</p><% } %>
+        <ul class="list-group list-group-flush">
+          <% results.patients.forEach(p => { %>
+            <li class="list-group-item px-0 d-flex justify-content-between align-items-center">
+              <span><strong><%= p.name %></strong> <small class="text-muted"><%= p.uhid %> &bull; <%= p.phone %></small></span>
+              <a href="/patients/<%= p.id %>/timeline" class="btn btn-sm btn-outline-primary">Open</a>
+            </li>
+          <% }) %>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card h-100">
+      <div class="card-header"><i class="bi bi-person-badge me-1"></i>Doctors (<%= results.doctors.length %>)</div>
+      <div class="card-body">
+        <% if (!results.doctors.length) { %><p class="text-muted mb-0">No matches</p><% } %>
+        <ul class="list-group list-group-flush">
+          <% results.doctors.forEach(d => { %>
+            <li class="list-group-item px-0"><strong><%= d.name %></strong> <small class="text-muted"><%= d.specialization %></small></li>
+          <% }) %>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card h-100">
+      <div class="card-header"><i class="bi bi-capsule me-1"></i>Treatments (<%= results.treatments.length %>)</div>
+      <div class="card-body">
+        <% if (!results.treatments.length) { %><p class="text-muted mb-0">No matches</p><% } %>
+        <ul class="list-group list-group-flush">
+          <% results.treatments.forEach(t => { %>
+            <li class="list-group-item px-0"><strong><%= t.name %></strong> <small class="text-muted">&#8377;<%= t.cost %></small></li>
+          <% }) %>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card h-100">
+      <div class="card-header"><i class="bi bi-receipt me-1"></i>Bills (<%= results.bills.length %>)</div>
+      <div class="card-body">
+        <% if (!results.bills.length) { %><p class="text-muted mb-0">No matches</p><% } %>
+        <ul class="list-group list-group-flush">
+          <% results.bills.forEach(b => { %>
+            <li class="list-group-item px-0 d-flex justify-content-between align-items-center">
+              <span><strong class="bill-no"><%= b.bill_no %></strong> <small class="text-muted"><%= b.patient_name %> &bull; &#8377;<%= b.total %></small></span>
+              <a href="/bills/<%= b.id %>" class="btn btn-sm btn-outline-primary">Open</a>
+            </li>
+          <% }) %>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+<% } %>

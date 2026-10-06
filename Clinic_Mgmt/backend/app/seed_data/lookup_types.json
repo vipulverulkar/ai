@@ -1,0 +1,9 @@
+[
+  {"type": "specialization", "label": "Specializations", "icon": "bi-person-badge", "description": "Medical specialities offered at the clinic", "placeholder": "e.g. Cardiology", "has_form": true},
+  {"type": "treatment_category", "label": "Treatment Categories", "icon": "bi-capsule", "description": "Categories for the treatment catalog", "placeholder": "e.g. Physiotherapy", "has_form": true},
+  {"type": "appointment_status", "label": "Appointment Status", "icon": "bi-calendar-check", "description": "Workflow status for appointments", "placeholder": "e.g. no-show", "has_form": true},
+  {"type": "gender", "label": "Genders", "icon": "bi-people", "description": "Patient gender options", "placeholder": "", "has_form": false},
+  {"type": "blood_group", "label": "Blood Groups", "icon": "bi-droplet", "description": "Blood group options", "placeholder": "", "has_form": false},
+  {"type": "user_role", "label": "User Roles", "icon": "bi-person-gear", "description": "Application user roles", "placeholder": "", "has_form": false},
+  {"type": "payment_method", "label": "Payment Methods", "icon": "bi-cash-coin", "description": "Accepted payment methods", "placeholder": "", "has_form": false}
+]

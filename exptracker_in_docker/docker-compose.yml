@@ -1,0 +1,13 @@
+services:
+  exptracker:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      - EXPENSE_DB=/data/expenses.db
+    volumes:
+      - exptracker-data:/data
+    restart: unless-stopped
+
+volumes:
+  exptracker-data:

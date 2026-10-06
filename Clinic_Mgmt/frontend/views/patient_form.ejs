@@ -1,0 +1,80 @@
+<div class="row justify-content-center">
+  <div class="col-md-8">
+    <div class="card">
+      <div class="card-header form-card-header">
+        <h4 class="mb-0"><i class="bi bi-person-plus me-2"></i><%= patient ? 'Edit Patient' : 'Add New Patient' %><% if (patient?.id) { %> <span class="badge bg-light text-dark ms-1">PT-<%= String(patient.id).padStart(4, '0') %></span><% } %></h4>
+      </div>
+      <div class="card-body">
+        <form action="<%= patient ? '/patients/' + patient.id : '/patients' %>" method="POST" id="patientForm">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <label class="form-label">Name *</label>
+              <input type="text" name="name" class="form-control" value="<%= patient?.name || '' %>" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Phone *</label>
+              <input type="tel" name="phone" class="form-control" value="<%= patient?.phone || '' %>" required>
+            </div>
+          </div>
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <label class="form-label">Email</label>
+              <input type="email" name="email" class="form-control" value="<%= patient?.email || '' %>">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Date of Birth</label>
+              <input type="date" name="dob" class="form-control" value="<%= patient?.dob ? patient.dob.split('T')[0] : '' %>">
+            </div>
+          </div>
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <label class="form-label">Gender</label>
+              <select name="gender" class="form-select">
+                <option value="">Select</option>
+                <% (typeof genders !== 'undefined' ? genders : []).forEach(g => { %>
+                  <option value="<%= g %>" <%= patient?.gender === g ? 'selected' : '' %>><%= g %></option>
+                <% }) %>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Blood Group</label>
+              <select name="blood_group" class="form-select">
+                <option value="">Select</option>
+                <% (typeof blood_groups !== 'undefined' ? blood_groups : []).forEach(b => { %>
+                  <option value="<%= b %>" <%= patient?.blood_group === b ? 'selected' : '' %>><%= b %></option>
+                <% }) %>
+              </select>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Address</label>
+            <textarea name="address" class="form-control" rows="3"><%= patient?.address || '' %></textarea>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Medical History</label>
+            <textarea name="medical_history" class="form-control" rows="3"><%= patient?.medical_history || '' %></textarea>
+          </div>
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <label class="form-label">Emergency Contact</label>
+              <input type="tel" name="emergency_contact" class="form-control" value="<%= patient?.emergency_contact || '' %>">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Allergies</label>
+              <input type="text" name="allergies" class="form-control" placeholder="e.g. Penicillin" value="<%= patient?.allergies || '' %>">
+            </div>
+          </div>
+          <div class="form-check mb-3">
+            <input type="checkbox" name="consent_captured" value="on" class="form-check-input" id="consentCheck" <%= patient?.consent_captured ? 'checked' : '' %>>
+            <label class="form-check-label" for="consentCheck">Treatment consent captured</label>
+          </div>
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">Save</button>
+            <a href="/patients" class="btn btn-secondary">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Edit – Expense Tracker{% endblock %}
+{% block content %}
+<section class="panel narrow">
+  <div class="panel-head">
+    <span class="pic">✏️</span>
+    <div><h2>Edit Transaction #{{ tx['id'] }}</h2><p>Update any field and save</p></div>
+  </div>
+  <form id="edit-form" method="post">
+    <label>Amount (₹)<input type="number" step="0.01" min="0.01" name="amount" value="{{ tx['amount'] }}" required></label>
+    <div class="segment">
+      <label><input type="radio" name="type" value="expense" {% if tx['type']=='expense' %}checked{% endif %}> ➖ Expense</label>
+      <label><input type="radio" name="type" value="income" {% if tx['type']=='income' %}checked{% endif %}> ➕ Income</label>
+    </div>
+    <label>Category
+      <select name="category_id" required>
+        {% for c in categories %}
+        <option value="{{ c['id'] }}" data-type="{{ c['type'] }}" {% if c['id']==tx['category_id'] %}selected{% endif %}>{{ c['name'] }} ({{ c['type'] }})</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Date<input type="date" name="date" value="{{ tx['date'] }}" required></label>
+    <label>Note<input type="text" name="note" value="{{ tx['note'] or '' }}" maxlength="200"></label>
+    <div class="row" style="margin-top:12px">
+      <button class="btn primary" type="submit" style="flex:1">Save changes</button>
+      <a class="btn ghost" href="{{ url_for('transactions') }}">Cancel</a>
+    </div>
+  </form>
+</section>
+{% endblock %}

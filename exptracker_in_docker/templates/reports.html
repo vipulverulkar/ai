@@ -1,0 +1,258 @@
+{% extends "base.html" %}
+{% block title %}Reports – Expense Tracker{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <div>
+    <h1>Reports</h1>
+    <p class="sub">Daily &amp; monthly summaries · {{ period_label }}</p>
+  </div>
+  <div class="tabs">
+    <a class="btn {% if view=='daily' %}primary{% else %}ghost{% endif %}" href="{{ url_for('reports', view='daily', month=month if month is defined else '') }}">📅 Daily</a>
+    <a class="btn {% if view=='monthly' %}primary{% else %}ghost{% endif %}" href="{{ url_for('reports', view='monthly', year=year if year is defined else '') }}">🗓️ Monthly</a>
+  </div>
+</div>
+
+<section class="panel">
+  <div class="panel-head">
+    <span class="pic">🎯</span>
+    <div><h2>Summary – {{ period_label }}</h2><p>{% if view=='daily' %}One row per day{% else %}One row per month{% endif %}</p></div>
+    <span class="spacer"></span>
+    {% if view == 'daily' %}
+    <form method="get" class="filters inline" style="margin:0">
+      <input type="hidden" name="view" value="daily">
+      <label style="min-width:150px">Month <input type="month" name="month" value="{{ month }}"></label>
+      <button class="btn primary" type="submit">Show</button>
+    </form>
+    {% else %}
+    <form method="get" class="filters inline" style="margin:0">
+      <input type="hidden" name="view" value="monthly">
+      <label style="min-width:130px">Year
+        <select name="year">
+          {% for y in years %}
+          <option value="{{ y }}" {% if y|string==year|string %}selected{% endif %}>{{ y }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button class="btn primary" type="submit">Show</button>
+    </form>
+    {% endif %}
+  </div>
+
+  <div class="grid cards">
+    <div class="stat accent-green">
+      <div class="stat-top"><span class="ic green">📈</span><span class="label">Income</span></div>
+      <strong class="green">₹{{ "%.2f"|format(tot_inc) }}</strong>
+    </div>
+    <div class="stat accent-red">
+      <div class="stat-top"><span class="ic red">📉</span><span class="label">Expense</span></div>
+      <strong class="red">₹{{ "%.2f"|format(tot_exp) }}</strong>
+    </div>
+    <div class="stat accent-indigo">
+      <div class="stat-top"><span class="ic indigo">💰</span><span class="label">Savings</span></div>
+      <strong>₹{{ "%.2f"|format(tot_inc - tot_exp) }}</strong>
+    </div>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span class="pic">📈</span>
+    <div><h3>Graphs – {{ period_label }}</h3><p>Hover any point for exact values</p></div>
+  </div>
+  {% set trend_rows = daily if view == 'daily' else monthly %}
+  {% if trend_rows %}
+  <div class="charts-grid">
+    <div class="chart-box wide">
+      <h4>{% if view == 'daily' %}Daily income vs expense{% else %}Monthly income vs expense{% endif %} <span>· bars + savings line</span></h4>
+      <div class="chart-wrap tall"><canvas id="trendChart"></canvas></div>
+    </div>
+    <div class="chart-box" id="expBox">
+      <h4>Expenses by category <span>· pie</span></h4>
+      <div class="chart-wrap"><canvas id="expChart"></canvas></div>
+    </div>
+    <div class="chart-box" id="incBox">
+      <h4>Income by category <span>· pie</span></h4>
+      <div class="chart-wrap"><canvas id="incChart"></canvas></div>
+    </div>
+  </div>
+  <p class="chart-note">Charts load via the Chart.js CDN (needs internet) · tables below always work offline</p>
+  {% else %}
+  <div class="chart-empty"><span class="big">📭</span>No data to chart for this period.</div>
+  {% endif %}
+</section>
+
+<section class="panel">
+  {% if view == 'daily' %}
+  <div class="panel-head">
+    <span class="pic">📊</span>
+    <div><h3>Daily breakdown – {{ month }}</h3><p>Green = income, red = expense</p></div>
+  </div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Date</th><th style="min-width:170px">Trend</th><th class="num">Income</th><th class="num">Expense</th><th class="num">Savings</th></tr></thead>
+    <tbody>
+    {% for d in daily %}
+      <tr>
+        <td style="white-space:nowrap">{{ d.date }}</td>
+        <td>
+          <div class="bars">
+            <div class="bar-row"><span class="bar-tag">IN</span><div class="bar"><span class="fill income" style="width:{{ '%.1f'|format(d.income/max_day*100) if max_day else 0 }}%"></span></div></div>
+            <div class="bar-row"><span class="bar-tag">OUT</span><div class="bar"><span class="fill expense" style="width:{{ '%.1f'|format(d.expense/max_day*100) if max_day else 0 }}%"></span></div></div>
+          </div>
+        </td>
+        <td class="num green">₹{{ "%.2f"|format(d.income) }}</td>
+        <td class="num red">₹{{ "%.2f"|format(d.expense) }}</td>
+        <td class="num">₹{{ "%.2f"|format(d.savings) }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" class="empty"><span class="big">📭</span>No data for this month.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <div class="panel-head">
+    <span class="pic">📊</span>
+    <div><h3>Monthly breakdown – {{ year }}</h3><p>Green = income, red = expense</p></div>
+  </div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Month</th><th style="min-width:170px">Trend</th><th class="num">Income</th><th class="num">Expense</th><th class="num">Savings</th></tr></thead>
+    <tbody>
+    {% for m in monthly %}
+      <tr>
+        <td style="white-space:nowrap">{{ m.month }}</td>
+        <td>
+          <div class="bars">
+            <div class="bar-row"><span class="bar-tag">IN</span><div class="bar"><span class="fill income" style="width:{{ '%.1f'|format(m.income/max_month*100) if max_month else 0 }}%"></span></div></div>
+            <div class="bar-row"><span class="bar-tag">OUT</span><div class="bar"><span class="fill expense" style="width:{{ '%.1f'|format(m.expense/max_month*100) if max_month else 0 }}%"></span></div></div>
+          </div>
+        </td>
+        <td class="num green">₹{{ "%.2f"|format(m.income) }}</td>
+        <td class="num red">₹{{ "%.2f"|format(m.expense) }}</td>
+        <td class="num">₹{{ "%.2f"|format(m.savings) }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span class="pic">🏷️</span>
+    <div><h3>By category – {{ period_label }}</h3><p>Share of the biggest category</p></div>
+  </div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Category</th><th>Type</th><th style="min-width:150px">Share</th><th class="num">Total</th></tr></thead>
+    <tbody>
+    {% for c in cat_rows %}
+      <tr>
+        <td class="cat-name">{{ c['name'] }}</td>
+        <td><span class="badge {{ c['type'] }}">{{ c['type'] }}</span></td>
+        <td class="cat-bar-cell"><div class="bar single"><span class="fill {{ c['type'] }}" style="width:{{ '%.1f'|format(c['total']/max_cat*100) if max_cat else 0 }}%"></span></div></td>
+        <td class="num">₹{{ "%.2f"|format(c['total']) }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="4" class="empty"><span class="big">📭</span>No data.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+  if (!window.Chart) return;
+  Chart.defaults.font.family = "'Inter', system-ui, -apple-system, sans-serif";
+  Chart.defaults.color = "#64748b";
+
+  var isDaily = {{ 'true' if view == 'daily' else 'false' }};
+  var trend = {{ (daily if view == 'daily' else monthly)|tojson }};
+  var cats = {{ cat_rows|tojson }};
+  if (!trend.length) return;
+
+  var MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  var labels = trend.map(function (r) {
+    return isDaily ? r.date.slice(8) : MONTHS[parseInt(r.month.slice(5), 10) - 1];
+  });
+
+  function money(v) {
+    return "₹" + Number(v).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  var tooltip = {
+    callbacks: {
+      label: function (ctx) {
+        var v = ctx.parsed.y !== undefined ? ctx.parsed.y : ctx.parsed;
+        return " " + ctx.dataset.label + ": " + money(v);
+      }
+    }
+  };
+
+  var pieTooltip = {
+    callbacks: {
+      label: function (ctx) {
+        var total = ctx.dataset.data.reduce(function (a, b) { return a + b; }, 0);
+        var v = ctx.parsed;
+        var pct = total ? (v / total * 100).toFixed(1) : "0.0";
+        return " " + ctx.label + ": " + money(v) + " (" + pct + "%)";
+      }
+    }
+  };
+
+  new Chart(document.getElementById("trendChart"), {
+    type: "bar",
+    data: {
+      labels: labels,
+      datasets: [
+        { type: "bar", label: "Income", data: trend.map(function (r) { return r.income; }),
+          backgroundColor: "#34d399", hoverBackgroundColor: "#059669", borderRadius: 5, borderSkipped: false },
+        { type: "bar", label: "Expense", data: trend.map(function (r) { return r.expense; }),
+          backgroundColor: "#fb7185", hoverBackgroundColor: "#e11d48", borderRadius: 5, borderSkipped: false },
+        { type: "line", label: "Savings", data: trend.map(function (r) { return r.savings; }),
+          borderColor: "#6366f1", backgroundColor: "#6366f1", tension: 0.35, pointRadius: 3, borderWidth: 2.5 }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      plugins: { tooltip: tooltip, legend: { position: "bottom", labels: { usePointStyle: true, boxWidth: 8 } } },
+      scales: {
+        y: { beginAtZero: true, grid: { color: "#eef2f7" },
+             ticks: { callback: function (v) { return "₹" + (Math.abs(v) >= 1000 ? (Math.round(v / 100) / 10) + "k" : v); } } },
+        x: { grid: { display: false } }
+      }
+    }
+  });
+
+  var EXP_COLORS = ["#e11d48","#f43f5e","#fb7185","#f97316","#fb923c","#fbbf24","#a855f7","#8b5cf6","#6366f1","#ec4899","#14b8a6","#64748b"];
+  var INC_COLORS = ["#059669","#10b981","#34d399","#14b8a6","#2dd4bf","#0ea5e9","#38bdf8","#6366f1","#84cc16","#a3e635","#eab308","#64748b"];
+
+  function pie(canvasId, boxId, items, colors, emptyMsg) {
+    var box = document.getElementById(boxId);
+    if (!items.length) {
+      box.innerHTML = "<h4>" + box.querySelector("h4").innerHTML + "</h4>" +
+        '<div class="chart-empty"><span class="big">📭</span>' + emptyMsg + "</div>";
+      return;
+    }
+    new Chart(document.getElementById(canvasId), {
+      type: "pie",
+      data: {
+        labels: items.map(function (c) { return c.name; }),
+        datasets: [{ data: items.map(function (c) { return c.total; }),
+          backgroundColor: items.map(function (_, i) { return colors[i % colors.length]; }),
+          borderColor: "#fff", borderWidth: 3, hoverOffset: 8 }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { tooltip: pieTooltip, legend: { position: "bottom", labels: { usePointStyle: true, boxWidth: 8, padding: 12 } } }
+      }
+    });
+  }
+
+  pie("expChart", "expBox", cats.filter(function (c) { return c.type === "expense"; }), EXP_COLORS, "No expenses this period.");
+  pie("incChart", "incBox", cats.filter(function (c) { return c.type === "income"; }), INC_COLORS, "No income this period.");
+})();
+</script>
+{% endblock %}

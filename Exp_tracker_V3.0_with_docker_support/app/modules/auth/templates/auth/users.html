@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Users – Expense Tracker{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <div>
+    <h1>Users</h1>
+    <p class="sub">Accounts that can sign in to this workspace · password min 8 chars with letters &amp; numbers</p>
+  </div>
+  <a class="btn ghost" href="{{ url_for('auth.audit') }}">🧾 Audit log</a>
+</div>
+
+<section class="panel">
+  <div class="panel-head">
+    <span class="pic">➕</span>
+    <div><h2>Add user</h2><p>Username 3–32 chars · password min 8 chars (letters + digits)</p></div>
+  </div>
+  <form method="post" action="{{ url_for('auth.users') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="row">
+      <label style="flex:1">Username
+        <input type="text" name="username" required minlength="3" maxlength="32"
+               autocomplete="off" placeholder="e.g. accountant">
+      </label>
+      <label style="flex:1">Password
+        <input type="password" name="password" required minlength="8"
+               autocomplete="new-password" placeholder="Min 8 chars, letters + digits">
+      </label>
+      <label style="max-width:140px">Role
+        <select name="role">
+          {% for r in roles %}
+          <option value="{{ r }}" {% if r == 'admin' %}selected{% endif %}>{{ r|capitalize }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button class="btn primary" type="submit" style="flex:1">Add user</button>
+    </div>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span class="pic">👥</span>
+    <div><h2>Accounts</h2><p>{{ users|length }} user(s)</p></div>
+  </div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Username</th><th>Role</th><th>2FA</th><th>Created</th><th>Idle timeout</th><th></th></tr></thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td class="cat-name"><a href="{{ url_for('auth.user_profile', user_id=u['id']) }}">{{ u["username"] }}</a>
+          {% if u["username"] == current %}<span class="count-pill">you</span>{% endif %}
+        </td>
+        <td>
+          {% if u["username"] != current %}
+          <form method="post" action="{{ url_for('auth.change_role', user_id=u['id']) }}"
+                style="display:flex;gap:6px">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <select name="role" style="margin:0;width:110px">
+              {% for r in roles %}
+              <option value="{{ r }}" {% if (u["role"] or 'admin') == r %}selected{% endif %}>{{ r|capitalize }}</option>
+              {% endfor %}
+            </select>
+            <button class="btn small" type="submit">Set</button>
+          </form>
+          {% else %}
+          <span class="badge">{{ u["role"] or "admin" }}</span>
+        {% endif %}
+        </td>
+        <td>{{ "🔐 on" if u["totp_enabled"] else "—" }}</td>
+        <td>{{ u["created_at"] or "—" }}</td>
+        <td>{{ u["session_timeout_minutes"] or "default" }}{% if u["session_timeout_minutes"] %} min{% endif %}</td>
+        <td>
+          <div class="actions" style="justify-content:flex-end">
+            <form method="post" action="{{ url_for('auth.reset_password', user_id=u['id']) }}"
+                  style="display:flex;gap:6px">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="password" name="password" required minlength="4"
+                     autocomplete="new-password" placeholder="New password"
+                     style="margin:0;width:150px">
+              <button class="btn small" type="submit">Set password</button>
+            </form>
+            {% if u["username"] != current %}
+            <form method="post" action="{{ url_for('auth.delete_user', user_id=u['id']) }}"
+                  onsubmit="return confirm('Delete user {{ u['username'] }}?');">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn small danger" type="submit">Delete</button>
+            </form>
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+  <p class="hint">You cannot delete your own account, the last remaining user, or the last admin.</p>
+</section>
+{% endblock %}

@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Trash – Expense Tracker{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <div>
+    <h1>Trash</h1>
+    <p class="sub">Soft-deleted transactions — restore them or remove them permanently</p>
+  </div>
+  <a class="btn ghost" href="{{ url_for('transactions.index') }}">← Transactions</a>
+</div>
+
+<section class="panel">
+  <div class="panel-head">
+    <span class="pic">🗑</span>
+    <div><h2>Deleted transactions</h2><p>{{ rows|length }} row(s) in trash</p></div>
+  </div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Date</th><th>Type</th><th>Category</th><th>Note</th><th>Deleted at</th><th class="num">Amount</th><th>Actions</th></tr></thead>
+    <tbody>
+    {% for t in rows %}
+      <tr>
+        <td style="white-space:nowrap">{{ t['date'] }}</td>
+        <td><span class="badge {{ t['type'] }}">{{ t['type'] }}</span></td>
+        <td class="cat-name">{{ t['category_name'] }}</td>
+        <td class="note-cell">{{ t['note'] or '—' }}</td>
+        <td style="white-space:nowrap">{{ t['deleted_at'] or '—' }}</td>
+        <td class="num {{ t['type'] }}">{{ currency }}{{ (t['amount']|money) }}</td>
+        <td class="actions">
+          {% if is_admin %}
+          <form method="post" action="{{ url_for('transactions.trash_restore', tx_id=t['id']) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn small" type="submit">↩ Restore</button>
+          </form>
+          <form method="post" action="{{ url_for('transactions.trash_purge', tx_id=t['id']) }}"
+                onsubmit="return confirm('Permanently delete this transaction? This cannot be undone.')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn small danger" type="submit">✕ Delete forever</button>
+          </form>
+          {% else %}
+          <span style="color:var(--muted)">admin only</span>
+          {% endif %}
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7" class="empty"><span class="big">✨</span>Trash is empty.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <p class="hint">Deleted transactions stay here until an admin restores or purges them.</p>
+</section>
+{% endblock %}

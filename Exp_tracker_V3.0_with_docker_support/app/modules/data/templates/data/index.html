@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Import & backup – Expense Tracker{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <div>
+    <h1>Import & backup</h1>
+    <p class="sub">Restore or migrate everything from CSV files, or back up the full database</p>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center">
+    <span class="badge" title="Currently active database">🗄 {{ db_label }}</span>
+    <a class="btn" href="{{ url_for('data.backup') }}">⬇ Download backup (.json)</a>
+  </div>
+</div>
+
+<section class="panel">
+  <div class="panel-head">
+    <span class="pic">💾</span>
+    <div><h2>Database backup & restore</h2><p>JSON snapshot of categories, budgets, transactions and users — works on SQLite and PostgreSQL</p></div>
+  </div>
+  {% if is_admin %}
+  <form method="post" action="{{ url_for('data.restore') }}" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="row">
+      <label style="flex:1">Backup file (.json)
+        <input type="file" name="backup_file" accept=".json,application/json">
+      </label>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <label style="flex:1"><input type="checkbox" name="confirm" value="yes"> I understand restoring <b>replaces all current data</b></label>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button class="btn primary" type="submit" style="flex:1">Restore from backup</button>
+    </div>
+  </form>
+  <p class="hint">Tip: download a backup before importing CSVs or trying a restore, so you can always go back.</p>
+  {% else %}
+  <p class="hint">View-only access — restore requires an admin account.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span class="pic">📥</span>
+    <div><h2>Upload CSV files</h2><p>All files optional — import any combination at once</p></div>
+  </div>
+  {% if is_admin %}
+  <form method="post" action="{{ url_for('data.import_data') }}" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="row">
+      <label style="flex:1">Categories CSV
+        <input type="file" name="categories_file" accept=".csv">
+      </label>
+      <label style="flex:1">Budgets CSV
+        <input type="file" name="budgets_file" accept=".csv">
+      </label>
+      <label style="flex:1">Transactions CSV
+        <input type="file" name="transactions_file" accept=".csv">
+      </label>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button class="btn primary" type="submit" style="flex:1">Import selected files</button>
+    </div>
+  </form>
+  <p class="hint">Files are processed in dependency order: categories → budgets → transactions.
+    Max 2&nbsp;MB total upload, {{ 2000 }} rows per file.</p>
+  {% else %}
+  <p class="hint">View-only access — importing requires an admin account.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span class="pic">📄</span>
+    <div><h2>Expected CSV formats</h2><p>First row must be the header; UTF-8 encoding</p></div>
+  </div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>File</th><th>Columns</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="cat-name">categories.csv</td>
+        <td><code>name,type</code></td>
+        <td>type is <code>income</code> or <code>expense</code> · existing names are skipped</td>
+      </tr>
+      <tr>
+        <td class="cat-name">budgets.csv</td>
+        <td><code>category,monthly_limit</code></td>
+        <td>matched by category name (expense categories only) · existing budgets are updated</td>
+      </tr>
+      <tr>
+        <td class="cat-name">transactions.csv</td>
+        <td><code>date,type,category,amount,note[,owner]</code></td>
+        <td>date as YYYY-MM-DD · unknown categories are auto-created · owner must be an existing user (else attributed to you)</td>
+      </tr>
+    </tbody>
+  </table></div>
+  <p class="hint">Tip: the transactions page has its own quick
+    <a href="{{ url_for('transactions.index') }}">CSV import/export</a> for transactions only.</p>
+</section>
+{% endblock %}

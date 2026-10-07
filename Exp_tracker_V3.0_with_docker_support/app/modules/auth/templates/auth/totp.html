@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Expense Tracker — two-factor verification.">
+  <meta name="theme-color" content="#1e1b4b">
+  <title>Two-factor check – Expense Tracker</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💰</text></svg>">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="auth-body">
+<div class="toast-wrap" aria-live="polite">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for cat, msg in messages %}
+        <div class="flash {{ cat }}" role="alert" title="Click to dismiss">
+          <span class="fi">{% if cat == 'success' %}✓{% else %}!{% endif %}</span><span>{{ msg }}</span>
+        </div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+</div>
+<main class="auth-main">
+  <div class="auth-shell">
+    <aside class="auth-brand">
+      <div class="auth-brand-top">
+        <span class="logo">₹</span>
+        <strong>Expense Tracker</strong>
+      </div>
+      <h1>Two-factor<br>verification.</h1>
+      <p class="auth-tag">Enter the 6-digit code from your authenticator app to finish signing in.</p>
+    </aside>
+    <section class="auth-form" aria-label="Two-factor check">
+      <div class="auth-form-head">
+        <span class="logo">🔐</span>
+        <h2>Verification code</h2>
+        <p>Signing in as <b>{{ username }}</b></p>
+      </div>
+      <form method="post" autocomplete="off">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label class="field">
+          <span class="field-label">6-digit code</span>
+          <span class="field-wrap">
+            <span class="field-icon">🔢</span>
+            <input type="text" name="code" required autofocus inputmode="numeric"
+                   pattern="[0-9]*" maxlength="6" placeholder="123456"
+                   autocomplete="one-time-code">
+          </span>
+        </label>
+        <button class="btn primary block auth-submit" type="submit">Verify →</button>
+      </form>
+      <p class="hint auth-note"><a href="{{ url_for('auth.logout') }}">Cancel and start over</a></p>
+    </section>
+  </div>
+</main>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

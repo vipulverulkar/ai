@@ -1,0 +1,142 @@
+"""Seed demo data for the Expense Tracker. Run: python3 seed_demo.py"""
+import random
+from datetime import date
+
+from app.config import Config
+from app.db import connect, init_db
+from app.helpers import to_cents, from_cents
+
+# Works with either backend: SQLite (default) or Postgres (DB_TYPE/DATABASE_URL).
+CONFIG = {"DB_TYPE": Config.DB_TYPE, "DATABASE_URL": Config.DATABASE_URL,
+          "EXPENSE_DB": Config.EXPENSE_DB}
+
+random.seed(42)
+
+EXPENSE_NOTES = {
+    "Food": [("Lunch at cafe", 150, 450), ("Groceries", 800, 3500),
+             ("Dinner", 300, 1200), ("Snacks", 80, 300)],
+    "Transport": [("Metro recharge", 200, 800), ("Petrol", 500, 2000),
+                  ("Cab ride", 250, 700), ("Bus pass", 100, 300)],
+    "Shopping": [("Clothes", 1200, 5000), ("Electronics", 2000, 15000),
+                 ("Shoes", 1500, 4000)],
+    "Bills": [("Electricity bill", 800, 2500), ("Internet", 499, 999),
+              ("Mobile recharge", 239, 399), ("Rent", 8000, 12000)],
+    "Entertainment": [("Movie", 400, 1000), ("Concert", 999, 2500),
+                      ("Games", 300, 1500)],
+    "Health": [("Pharmacy", 200, 1500), ("Doctor visit", 500, 2000),
+               ("Gym", 800, 2000)],
+    "Other": [("Gift", 500, 3000), ("Misc", 100, 1000)],
+}
+INCOME_NOTES = {
+    "Salary": [("Monthly salary", 45000, 60000)],
+    "Freelance": [("Freelance project", 5000, 20000), ("Side gig", 2000, 8000)],
+    "Investment": [("Dividends", 1000, 5000), ("Interest", 500, 2500)],
+}
+
+DEMO_BUDGETS = {"Food": 8000, "Transport": 3000, "Shopping": 10000, "Bills": 15000,
+                "Entertainment": 4000, "Health": 3000}
+
+
+def main(clear=True):
+    init_db(CONFIG)
+    db = connect(CONFIG)
+    if clear:
+        db.execute("DELETE FROM transactions")
+        db.execute("DELETE FROM budgets")
+        db.commit()
+
+    cats = {r[1]: r[0] for r in db.execute("SELECT id, name FROM categories").fetchall()}
+    today = date.today()
+
+    # Attribute demo rows to the first user.
+    admin = db.execute("SELECT id FROM users ORDER BY id LIMIT 1").fetchone()
+    admin_id = admin[0] if admin else None
+
+    for name, limit in DEMO_BUDGETS.items():
+        if name in cats:
+            db.execute(
+                """INSERT INTO budgets (category_id, monthly_limit) VALUES (?,?)
+                   ON CONFLICT(category_id) DO UPDATE SET monthly_limit=excluded.monthly_limit""",
+                (cats[name], to_cents(limit)))
+
+    # Build list of months: last 6 months including current
+    months = []
+    y, m = today.year, today.month
+    for _ in range(6):
+        months.append((y, m))
+        m -= 1
+        if m == 0:
+            m = 12
+            y -= 1
+    months.reverse()
+
+    count = 0
+    for (y, m) in months:
+        name = "Salary"
+        note, lo, hi = random.choice(INCOME_NOTES[name])
+        amt = round(random.uniform(lo, hi), 2)
+        db.execute(
+            "INSERT INTO transactions (amount,type,category_id,date,note,user_id)"
+            " VALUES (?,?,?,?,?,?)",
+            (to_cents(amt), "income", cats[name], f"{y}-{m:02d}-01", note, admin_id),
+        )
+        count += 1
+        for _ in range(random.randint(0, 2)):
+            day = random.randint(2, 28)
+            d = date(y, m, day)
+            if d > today:
+                continue
+            note, lo, hi = random.choice(INCOME_NOTES["Freelance"])
+            amt = round(random.uniform(lo, hi), 2)
+            db.execute(
+                "INSERT INTO transactions (amount,type,category_id,date,note,user_id)"
+            " VALUES (?,?,?,?,?,?)",
+                (to_cents(amt), "income", cats["Freelance"], d.isoformat(), note, admin_id),
+            )
+            count += 1
+        if random.random() < 0.5:
+            day = random.randint(2, 28)
+            d = date(y, m, day)
+            if d <= today:
+                note, lo, hi = random.choice(INCOME_NOTES["Investment"])
+                amt = round(random.uniform(lo, hi), 2)
+                db.execute(
+                    "INSERT INTO transactions (amount,type,category_id,date,note,user_id)"
+            " VALUES (?,?,?,?,?,?)",
+                    (to_cents(amt), "income", cats["Investment"], d.isoformat(), note, admin_id),
+                )
+                count += 1
+        for bcat in ("Bills",):
+            note, lo, hi = random.choice(EXPENSE_NOTES[bcat])
+            amt = round(random.uniform(lo, hi), 2)
+            db.execute(
+                "INSERT INTO transactions (amount,type,category_id,date,note,user_id)"
+            " VALUES (?,?,?,?,?,?)",
+                (to_cents(amt), "expense", cats[bcat], f"{y}-{m:02d}-05", note, admin_id),
+            )
+            count += 1
+        for _ in range(random.randint(15, 25)):
+            day = random.randint(1, 28)
+            d = date(y, m, day)
+            if d > today:
+                continue
+            ecat = random.choice(list(EXPENSE_NOTES.keys()))
+            note, lo, hi = random.choice(EXPENSE_NOTES[ecat])
+            amt = round(random.uniform(lo, hi), 2)
+            db.execute(
+                "INSERT INTO transactions (amount,type,category_id,date,note,user_id)"
+            " VALUES (?,?,?,?,?,?)",
+                (to_cents(amt), "expense", cats[ecat], d.isoformat(), note, admin_id),
+            )
+            count += 1
+
+    db.commit()
+    tot_inc = db.execute("SELECT SUM(amount) FROM transactions WHERE type='income'").fetchone()[0]
+    tot_exp = db.execute("SELECT SUM(amount) FROM transactions WHERE type='expense'").fetchone()[0]
+    print(f"Inserted {count} demo transactions + {len(DEMO_BUDGETS)} budgets.")
+    print(f"Total income: {from_cents(tot_inc):.2f} | Total expense: {from_cents(tot_exp):.2f} | Balance: {from_cents(tot_inc-tot_exp):.2f}")
+    db.close()
+
+
+if __name__ == "__main__":
+    main()

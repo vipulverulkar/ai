@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Rename category – Expense Tracker{% endblock %}
+{% block content %}
+<section class="panel narrow">
+  <div class="panel-head">
+    <span class="pic">🏷️</span>
+    <div><h2>Rename “{{ cat['name'] }}”</h2><p>{{ cat['type'] }} category</p></div>
+  </div>
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>New name<input type="text" name="name" value="{{ cat['name'] }}" required maxlength="50"></label>
+    <div class="row" style="margin-top:12px">
+      <button class="btn primary" type="submit" style="flex:1">Save</button>
+      <a class="btn ghost" href="{{ url_for('categories.index') }}">Cancel</a>
+    </div>
+  </form>
+</section>
+{% endblock %}

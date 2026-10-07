@@ -1,0 +1,11 @@
+flask>=3.0,<3.2
+gunicorn>=22.0
+psycopg[binary]>=3.1  # only used for the Postgres backend (DB_TYPE=postgres)
+flask-wtf>=1.2
+flask-limiter>=3.0
+flask-session>=0.8    # server-side (filesystem) sessions; guarded import
+pyotp>=2.8            # TOTP two-factor auth; guarded import
+reportlab>=4.0        # PDF report export; guarded import
+prometheus-client>=0.20  # optional /metrics endpoint (guarded import)
+sentry-sdk>=2.0          # optional error tracking, active when SENTRY_DSN is set
+pytest>=8.0

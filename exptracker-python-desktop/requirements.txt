@@ -1,0 +1,23 @@
+# Daily Expense Tracker — requirements
+# ============================================================
+# Runtime: 100% Python stdlib — no pip packages required to RUN the app.
+#   Uses only: tkinter (GUI) + sqlite3 (DB) + csv + stdlib.
+#   `pip install -r requirements.txt` will therefore be a no-op for running,
+#   but it validates your pip/Python setup.
+#
+#   If you see "No module named 'tkinter'" — reinstall Python with
+#   "tcl/tk and IDLE" checked (Windows installer) or `sudo apt install python3-tk` (Linux).
+# ============================================================
+
+# --- Build ---
+# Needed ONLY when you run build_exe.bat to create a standalone .exe.
+pyinstaller>=6.10
+
+# --- Dev / Lint (optional) ---
+# Uncomment if you want to run formatting / linting locally:
+# black==26.5.1
+# flake8==7.3.0
+# pycodestyle==2.14.0
+# pyflakes==3.4.0
+# mccabe==0.7.0
+# autopep8==2.3.2

@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Budgets – Expense Tracker{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <div>
+    <h1>Budgets</h1>
+    <p class="sub">Monthly spending limits per category · {{ month }}</p>
+  </div>
+  <form method="get" class="filters inline" style="margin:0">
+    <label style="min-width:150px">Month <input type="month" name="month" value="{{ month }}"></label>
+    <button class="btn primary" type="submit">Show</button>
+  </form>
+</div>
+
+<div class="grid cards">
+  <div class="stat accent-indigo">
+    <div class="stat-top"><span class="ic indigo">🎯</span><span class="label">Total budgeted</span></div>
+    <strong>{{ currency }}{{ (total_limit|money) }}</strong>
+  </div>
+  <div class="stat accent-red">
+    <div class="stat-top"><span class="ic red">🧾</span><span class="label">Spent (budgeted cats)</span></div>
+    <strong class="red">{{ currency }}{{ (total_spent|money) }}</strong>
+  </div>
+  <div class="stat accent-green">
+    <div class="stat-top"><span class="ic green">💰</span><span class="label">Remaining</span></div>
+    <strong class="green">{{ currency }}{{ ((total_limit - total_spent)|money) }}</strong>
+  </div>
+</div>
+
+<div class="grid two">
+  <section class="panel">
+    <div class="panel-head">
+      <span class="pic">➕</span>
+      <div><h2>Set a budget</h2><p>Leave limit empty to remove</p></div>
+    </div>
+    <form method="post">
+      <label>Expense category
+        <select name="category_id" required>
+          <option value="">— select —</option>
+          {% for c in expense_cats %}
+          <option value="{{ c['id'] }}">{{ c['name'] }}{% if limits.get(c['id']) %} (now {{ currency }}{{ (limits.get(c['id'])|money0) }}){% endif %}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Monthly limit ({{ currency }})<input type="text" inputmode="decimal" class="amount-inr" name="monthly_limit" placeholder="e.g. 5,000" autocomplete="off"></label>
+      <button class="btn primary block" type="submit">Save budget</button>
+    </form>
+    <p class="hint">Budgets reset every month. Overspending shows an alert on the dashboard.</p>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <span class="pic">📊</span>
+      <div><h2>Status · {{ month }}</h2><p>{{ status|length }} active budgets</p></div>
+    </div>
+    {% if status %}
+    <div class="budget-grid">
+      {% for b in status %}
+      <div class="budget-card {% if b.over %}over{% elif b.near %}near{% endif %}">
+        <h4>{{ b.name }}</h4>
+        <div class="bar single"><span class="fill {% if b.over %}over{% elif b.near %}warn{% else %}ok{% endif %}" style="width:{{ b.pct }}%"></span></div>
+        <div class="budget-meta"><span>{{ currency }}{{ (b.spent|money) }} / {{ currency }}{{ (b.limit|money) }}</span><span>{{ b.pct }}%</span></div>
+        <div class="budget-meta"><span>{{ currency }}{{ (b.remaining|money) }} {% if b.over %}over{% else %}left{% endif %}</span>
+          <form method="post" action="{{ url_for('delete_budget', category_id=b.category_id) }}" onsubmit="return confirm('Remove budget for {{ b.name }}?')">
+            <button class="btn small danger" type="submit">Remove</button>
+          </form>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="chart-empty"><span class="big">🎯</span>No budgets yet.<br>Set one to keep spending in check.</div>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

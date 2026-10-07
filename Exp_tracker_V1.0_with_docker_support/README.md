@@ -32,7 +32,20 @@ Copy `.env.example` to `.env` to set `SECRET_KEY` (required in production) and `
 ## Docker
 
 ```bash
-docker compose up --build -d   # http://127.0.0.1:5000, data in exptracker-data volume
+docker compose up --build -d   # http://127.0.0.1:5000
+```
+
+Data persists in the `exptracker-data` named volume (`/data/expenses.db`
+in the container) across restarts, rebuilds and `docker compose down`.
+Only `docker compose down -v` deletes it.
+
+```bash
+# plain docker run with the same persistence:
+docker build -t exptracker .
+docker run -d -p 5000:5000 -v exptracker-data:/data --env-file .env exptracker
+# backup / restore:
+docker run --rm -v exptracker-data:/data -v "$PWD":/backup busybox tar czf /backup/exptracker-backup.tgz /data
+docker run --rm -v exptracker-data:/data -v "$PWD":/backup busybox tar xzf /backup/exptracker-backup.tgz -C /
 ```
 
 ## Config

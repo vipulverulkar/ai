@@ -54,8 +54,15 @@ DEFAULT_CATEGORIES = [
 
 
 # ---------- DB ----------
+def _ensure_db_dir():
+    parent = os.path.dirname(os.path.abspath(DB_PATH))
+    if parent and not os.path.isdir(parent):
+        os.makedirs(parent, exist_ok=True)
+
+
 def get_db():
     if "db" not in g:
+        _ensure_db_dir()
         g.db = sqlite3.connect(DB_PATH)
         g.db.row_factory = sqlite3.Row
         g.db.execute("PRAGMA foreign_keys = ON")
@@ -70,6 +77,7 @@ def close_db(exc=None):
 
 
 def init_db():
+    _ensure_db_dir()
     db = sqlite3.connect(DB_PATH)
     db.execute("PRAGMA foreign_keys = ON")
     db.execute(

@@ -8,8 +8,15 @@ services:
       - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
       - CURRENCY_SYMBOL=${CURRENCY_SYMBOL:-₹}
     env_file:
-      - .env
+      - path: .env
+        required: false
     volumes:
+      # Named volume: database survives `docker compose down`,
+      # rebuilds and image updates. Manage with:
+      #   docker volume inspect exptracker_exptracker-data
+      #   docker compose down -v   # DANGER: deletes all data
+      # To store the DB on the host instead, replace with a bind mount:
+      #   - ./data:/data
       - exptracker-data:/data
     restart: unless-stopped
     healthcheck:

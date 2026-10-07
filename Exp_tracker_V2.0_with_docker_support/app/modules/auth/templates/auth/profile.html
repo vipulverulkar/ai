@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Profile – Expense Tracker{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <div>
+    <h1>Profile</h1>
+    <p class="sub">Your account and session preferences</p>
+  </div>
+</div>
+
+<section class="panel">
+  <div class="panel-head">
+    <span class="pic">👤</span>
+    <div><h2>{{ user["username"] }}</h2><p>Account created {{ user["created_at"] or "—" }}</p></div>
+    <span class="spacer"></span>
+    <span class="badge">auto-logout after {{ effective_minutes }} min idle</span>
+  </div>
+  <form method="post">
+    <div class="row">
+      <label style="flex:1">Inactivity timeout (minutes)
+        <input type="number" name="timeout_minutes" min="1" max="1440" step="1"
+               placeholder="Default ({{ default_minutes }})"
+               value="{{ user['session_timeout_minutes'] or '' }}">
+      </label>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button class="btn primary" type="submit" style="flex:1">Save timeout</button>
+    </div>
+  </form>
+  <p class="hint">Leave blank to use the site default ({{ default_minutes }} minutes).
+    You are signed out automatically after {{ effective_minutes }} minute(s) of inactivity.</p>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span class="pic">🧾</span>
+    <div><h2>Expenses you manage</h2><p>Transactions managed for {{ user["username"] }}</p></div>
+    <span class="spacer"></span>
+    <span class="count-pill">{{ stats["count"] }} managed</span>
+  </div>
+  <div class="totals-bar">
+    <span class="total-chip in">⬆ In {{ currency }}{{ (stats["income"]|money) }}</span>
+    <span class="total-chip out">⬇ Out {{ currency }}{{ (stats["expense"]|money) }}</span>
+    <span class="total-chip">Net {{ currency }}{{ ((stats["income"] - stats["expense"])|money) }}</span>
+  </div>
+  {% if recent %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Date</th><th>Category</th><th class="num">Amount</th></tr></thead>
+    <tbody>
+      {% for t in recent %}
+      <tr><td style="white-space:nowrap">{{ t["date"] }}</td>
+          <td class="cat-name">{{ t["category_name"] }}</td>
+          <td class="num {{ t['type'] }}">{{ '+' if t['type']=='income' else '−' }}{{ currency }}{{ (t['amount']|money) }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <p class="hint">Nothing managed for this account yet.</p>
+  {% endif %}
+</section>
+{% endblock %}

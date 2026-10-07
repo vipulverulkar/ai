@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Users – Expense Tracker{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <div>
+    <h1>Users</h1>
+    <p class="sub">Accounts that can sign in to this workspace</p>
+  </div>
+</div>
+
+<section class="panel">
+  <div class="panel-head">
+    <span class="pic">➕</span>
+    <div><h2>Add user</h2><p>Username 3–32 chars · password min 4 chars</p></div>
+  </div>
+  <form method="post" action="{{ url_for('auth.users') }}">
+    <div class="row">
+      <label style="flex:1">Username
+        <input type="text" name="username" required minlength="3" maxlength="32"
+               autocomplete="off" placeholder="e.g. accountant">
+      </label>
+      <label style="flex:1">Password
+        <input type="password" name="password" required minlength="4"
+               autocomplete="new-password" placeholder="Min 4 characters">
+      </label>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button class="btn primary" type="submit" style="flex:1">Add user</button>
+    </div>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span class="pic">👥</span>
+    <div><h2>Accounts</h2><p>{{ users|length }} user(s)</p></div>
+  </div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Username</th><th>Created</th><th>Idle timeout</th><th></th></tr></thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td class="cat-name"><a href="{{ url_for('auth.user_profile', user_id=u['id']) }}">{{ u["username"] }}</a>
+          {% if u["username"] == current %}<span class="count-pill">you</span>{% endif %}
+        </td>
+        <td>{{ u["created_at"] or "—" }}</td>
+        <td>{{ u["session_timeout_minutes"] or "default" }}{% if u["session_timeout_minutes"] %} min{% endif %}</td>
+        <td>
+          <div class="actions" style="justify-content:flex-end">
+            <form method="post" action="{{ url_for('auth.reset_password', user_id=u['id']) }}"
+                  style="display:flex;gap:6px">
+              <input type="password" name="password" required minlength="4"
+                     autocomplete="new-password" placeholder="New password"
+                     style="margin:0;width:150px">
+              <button class="btn small" type="submit">Set password</button>
+            </form>
+            {% if u["username"] != current %}
+            <form method="post" action="{{ url_for('auth.delete_user', user_id=u['id']) }}"
+                  onsubmit="return confirm('Delete user {{ u['username'] }}?');">
+              <button class="btn small danger" type="submit">Delete</button>
+            </form>
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+  <p class="hint">You cannot delete your own account or the last remaining user.</p>
+</section>
+{% endblock %}

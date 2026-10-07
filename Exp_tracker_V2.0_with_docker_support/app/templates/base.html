@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Expense Tracker — track income, expenses, budgets and reports.">
+  <meta name="theme-color" content="#1e1b4b">
+  <title>{% block title %}Expense Tracker{% endblock %}</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💰</text></svg>">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script>
+    try {
+      var t = localStorage.getItem('exp-theme');
+      if (t) document.documentElement.setAttribute('data-theme', t);
+      else if (matchMedia('(prefers-color-scheme: dark)').matches)
+        document.documentElement.setAttribute('data-theme', 'dark');
+    } catch (e) {}
+  </script>
+  {% block head %}{% endblock %}
+</head>
+<body>
+<nav class="nav" aria-label="Main navigation">
+  <div class="nav-inner">
+    <a class="brand" href="{{ url_for('dashboard.index') }}"><span class="logo">₹</span> Expense Tracker</a>
+    <div class="nav-right">
+      <div class="links">
+        <a href="{{ url_for('dashboard.index') }}" class="{% if request.blueprint == 'dashboard' %}active{% endif %}">Dashboard</a>
+        <a href="{{ url_for('transactions.index') }}" class="{% if request.blueprint == 'transactions' %}active{% endif %}">Transactions</a>
+        <a href="{{ url_for('reports.index') }}" class="{% if request.blueprint == 'reports' %}active{% endif %}">Reports</a>
+        <a href="{{ url_for('budgets.index') }}" class="{% if request.blueprint == 'budgets' %}active{% endif %}">Budgets</a>
+        <a href="{{ url_for('categories.index') }}" class="{% if request.blueprint == 'categories' %}active{% endif %}">Categories</a>
+        <a href="{{ url_for('data.index') }}" class="{% if request.blueprint == 'data' %}active{% endif %}">Data</a>
+        <a href="{{ url_for('auth.profile') }}" class="{% if request.endpoint == 'auth.profile' %}active{% endif %}">Profile</a>
+        <a href="{{ url_for('auth.users') }}" class="{% if request.endpoint in ('auth.users', 'auth.user_profile', 'auth.reset_password', 'auth.delete_user') %}active{% endif %}">Users</a>
+        <a href="{{ url_for('auth.logout') }}">Logout</a>
+      </div>
+      <button class="theme-btn" id="theme-toggle" aria-label="Toggle dark mode">🌙</button>
+    </div>
+  </div>
+</nav>
+<div class="toast-wrap" aria-live="polite">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for cat, msg in messages %}
+        <div class="flash {{ cat }}" role="alert" title="Click to dismiss">
+          <span class="fi">{% if cat == 'success' %}✓{% else %}!{% endif %}</span><span>{{ msg }}</span>
+        </div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+</div>
+<main class="container">
+  {% block content %}{% endblock %}
+</main>
+<footer class="footer"><b>Expense Tracker</b> v{{ app_version }} · built with Python, Flask, SQLite &amp; PostgreSQL · <a href="{{ url_for('healthz') }}" style="color:inherit">status</a></footer>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

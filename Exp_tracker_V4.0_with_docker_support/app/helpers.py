@@ -1,5 +1,7 @@
-"""Shared helpers: number formatting and date/month utilities."""
+"""Shared helpers: number formatting, date/month utilities and pagination."""
 from datetime import date, datetime
+
+PER_PAGE_CHOICES = (10, 25, 50, 100)
 
 def to_cents(value):
     """Convert decimal amount (string or float) to integer cents."""
@@ -67,3 +69,35 @@ def last_n_months(n=6):
         if m == 0:
             m, y = 12, y - 1
     return list(reversed(out))
+
+
+def paginate(total, page_raw=None, per_page_raw=None, default=25):
+    """Clamp page/per_page query params for a list with `total` rows.
+
+    Returns (page, per_page, total_pages, offset). Invalid values fall
+    back to page 1 and `default` (or 25 when default is invalid).
+    """
+    try:
+        per_page = int(per_page_raw)
+    except (ValueError, TypeError):
+        per_page = default
+    if per_page not in PER_PAGE_CHOICES:
+        per_page = default if default in PER_PAGE_CHOICES else 25
+    total_pages = max(1, -(-total // per_page))
+    try:
+        page = int(page_raw)
+    except (ValueError, TypeError):
+        page = 1
+    page = max(1, min(page, total_pages))
+    return page, per_page, total_pages, (page - 1) * per_page
+
+
+def page_window(page, total_pages):
+    """Compact page-link list with None gaps: [1, None, 4, 5, 6, None, 20]."""
+    out = []
+    for p in range(1, total_pages + 1):
+        if p == 1 or p == total_pages or abs(p - page) <= 2:
+            out.append(p)
+        elif out[-1] is not None:
+            out.append(None)
+    return out

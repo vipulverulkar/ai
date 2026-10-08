@@ -4,6 +4,7 @@ from datetime import date, timedelta
 from flask import flash, g, redirect, render_template, request, session, url_for
 
 from ...db import get_db, log_action
+from ...helpers import page_window, paginate
 from ..auth import models as auth_models
 from ..auth.controllers import admin_required
 from ..categories import models as category_models
@@ -21,9 +22,16 @@ def index():
             flash("That action requires an admin account.", "error")
             return redirect(url_for("recurring.index"))
         return _save(db)
+    total = models.count(db)
+    page, per_page, total_pages, offset = paginate(
+        total, request.args.get("page"), request.args.get("per_page"))
     return render_template(
         "recurring/list.html",
-        items=models.all(db),
+        items=models.page(db, per_page, offset),
+        total=total, page=page, per_page=per_page, total_pages=total_pages,
+        start=offset + 1 if total else 0,
+        end=min(offset + per_page, total),
+        pages=page_window(page, total_pages),
         categories=category_models.all(db),
         owners=auth_models.all_users(db),
         frequencies=FREQUENCIES,
@@ -65,7 +73,7 @@ def _save(db):
     note = (request.form.get("note", "") or "").strip()[:200]
     models.create(db, amount, ttype, cat["id"], note, frequency, start,
                   owner_id, currency=code, orig_amount=orig, end_date=end)
-    log_action(db, session.get("user"), "create_recurrence", "recurrences", None,
+    log_action(db, session.get("user"), "create_recurrence", "recurring_transactions", None,
                f"{frequency} {ttype}")
     span = f"{start} → {end}" if end else f"{start} → no end"
     flash(f"Recurring {ttype} scheduled ({frequency}, {span}).", "success")
@@ -95,7 +103,7 @@ def resume(rec_id):
         # resuming an overdue schedule: push next run a day out so it doesn't
         # instantly generate a burst of old transactions
         models.set_active(db, rec_id, True)
-        db.execute("UPDATE recurrences SET next_run_date=? WHERE id=?",
+        db.execute("UPDATE recurring_transactions SET next_run_date=? WHERE id=?",
                    ((date.today() + timedelta(days=1)).isoformat(), rec_id))
         db.commit()
     else:
@@ -110,7 +118,7 @@ def delete(rec_id):
     db = get_db()
     row = models.get(db, rec_id)
     models.delete(db, rec_id)
-    log_action(db, session.get("user"), "delete_recurrence", "recurrences", rec_id,
+    log_action(db, session.get("user"), "delete_recurrence", "recurring_transactions", rec_id,
                row["note"] if row else None)
     flash("Recurrence deleted. Generated transactions are kept.", "success")
     return redirect(url_for("recurring.index"))

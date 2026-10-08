@@ -137,7 +137,7 @@ def import_csv():
     if inserted:
         flash(f"Imported {inserted} transaction(s){f' ({skipped} skipped)' if skipped else ''}.", "success")
     else:
-        flash(f"No rows imported ({skipped} skipped). Check CSV format: date,type,category,amount,note[,owner][,currency].", "error")
+        flash(f"No rows imported ({skipped} skipped). Check CSV format: required columns date,type,category,amount with optional note,owner,currency.", "error")
     return redirect(url_for("transactions.index"))
 
 
@@ -288,9 +288,18 @@ def delete(tx_id):
 
 @bp.route("/trash")
 def trash():
+    from ...helpers import page_window, paginate
     db = get_db()
-    rows = models.deleted_rows(db)
-    return render_template("transactions/trash.html", rows=rows)
+    total = models.count_deleted(db)
+    page, per_page, total_pages, offset = paginate(
+        total, request.args.get("page"), request.args.get("per_page"))
+    rows = models.deleted_page(db, per_page, offset)
+    return render_template("transactions/trash.html", rows=rows,
+                           page=page, per_page=per_page, total=total,
+                           total_pages=total_pages,
+                           start=offset + 1 if total else 0,
+                           end=min(offset + per_page, total),
+                           pages=page_window(page, total_pages))
 
 
 @bp.route("/trash/<int:tx_id>/restore", methods=["POST"])

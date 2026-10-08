@@ -2,6 +2,7 @@
 from flask import flash, g, redirect, render_template, request, url_for
 
 from ...db import INTEGRITY_ERRORS, get_db
+from ...helpers import page_window, paginate
 from ..auth.controllers import admin_required
 from . import bp, models
 
@@ -27,8 +28,17 @@ def index():
         except INTEGRITY_ERRORS:
             flash(f"Category '{name}' already exists.", "error")
         return redirect(url_for("categories.index"))
-    return render_template("categories/list.html", categories=models.all(db),
-                           usage=models.usage_counts(db))
+    total = models.count(db)
+    page, per_page, total_pages, offset = paginate(
+        total, request.args.get("page"), request.args.get("per_page"))
+    return render_template("categories/list.html",
+                           categories=models.page(db, per_page, offset),
+                           usage=models.usage_counts(db),
+                           page=page, per_page=per_page, total=total,
+                           total_pages=total_pages,
+                           start=offset + 1 if total else 0,
+                           end=min(offset + per_page, total),
+                           pages=page_window(page, total_pages))
 
 
 @bp.route("/categories/edit/<int:cat_id>", methods=["GET", "POST"])

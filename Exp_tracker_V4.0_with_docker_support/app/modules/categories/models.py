@@ -5,6 +5,16 @@ def all(db):
     return db.execute("SELECT * FROM categories ORDER BY type, name").fetchall()
 
 
+def count(db):
+    return db.execute("SELECT COUNT(*) FROM categories").fetchone()[0]
+
+
+def page(db, per_page, offset):
+    return db.execute(
+        "SELECT * FROM categories ORDER BY type, name LIMIT ? OFFSET ?",
+        (per_page, offset)).fetchall()
+
+
 def by_type(db, ctype):
     return db.execute(
         "SELECT * FROM categories WHERE type=? ORDER BY name", (ctype,)).fetchall()

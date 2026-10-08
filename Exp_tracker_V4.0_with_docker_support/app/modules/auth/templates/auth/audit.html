@@ -5,7 +5,7 @@
 <div class="page-head">
   <div>
     <h1>Audit log</h1>
-    <p class="sub">Security-relevant actions (deletes, password resets, imports…) · latest 200</p>
+    <p class="sub">Security-relevant actions (deletes, password resets, imports…) · {{ total }} entries</p>
   </div>
   <form method="post" action="{{ url_for('auth.audit_purge') }}"
         onsubmit="return confirm('Purge audit entries older than {{ retention or 90 }} day(s)?')">
@@ -36,6 +36,33 @@
     {% endfor %}
     </tbody>
   </table></div>
+  <div class="pager">
+    <span class="pager-info">Showing {{ start }}–{{ end }} of {{ total }}</span>
+    <form method="get" action="{{ url_for('auth.audit') }}" class="per-page">
+      <label>Per page
+        <select name="per_page" onchange="this.form.submit()">
+          {% for n in [10, 25, 50, 100] %}
+          <option value="{{ n }}" {% if per_page == n %}selected{% endif %}>{{ n }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </form>
+    <div class="pager-links">
+      {% if page > 1 %}
+      <a class="btn small" href="{{ url_for('auth.audit', page=page - 1, per_page=per_page) }}">← Prev</a>
+      {% endif %}
+      {% for p in pages %}
+        {% if p %}
+        <a class="btn small {% if p == page %}primary{% endif %}" href="{{ url_for('auth.audit', page=p, per_page=per_page) }}">{{ p }}</a>
+        {% else %}
+        <span class="ellipsis">…</span>
+        {% endif %}
+      {% endfor %}
+      {% if page < total_pages %}
+      <a class="btn small" href="{{ url_for('auth.audit', page=page + 1, per_page=per_page) }}">Next →</a>
+      {% endif %}
+    </div>
+  </div>
   <p class="hint">Entries older than AUDIT_RETENTION_DAYS (if set) are purged on startup;
     you can also purge manually above.</p>
 </section>

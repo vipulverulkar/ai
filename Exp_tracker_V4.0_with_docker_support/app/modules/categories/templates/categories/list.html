@@ -36,7 +36,7 @@
       <span class="pic">🏷️</span>
       <div><h2>All Categories</h2><p>Delete only unused ones</p></div>
       <span class="spacer"></span>
-      <span class="count-pill">{{ categories|length }}</span>
+      <span class="count-pill">{{ total }}</span>
     </div>
     <div class="table-wrap"><table>
       <thead><tr><th>Name</th><th>Type</th><th>Used</th><th>Actions</th></tr></thead>
@@ -66,6 +66,33 @@
       {% endfor %}
       </tbody>
     </table></div>
+    <div class="pager">
+      <span class="pager-info">Showing {{ start }}–{{ end }} of {{ total }}</span>
+      <form method="get" action="{{ url_for('categories.index') }}" class="per-page">
+        <label>Per page
+          <select name="per_page" onchange="this.form.submit()">
+            {% for n in [10, 25, 50, 100] %}
+            <option value="{{ n }}" {% if per_page == n %}selected{% endif %}>{{ n }}</option>
+            {% endfor %}
+          </select>
+        </label>
+      </form>
+      <div class="pager-links">
+        {% if page > 1 %}
+        <a class="btn small" href="{{ url_for('categories.index', page=page - 1, per_page=per_page) }}">← Prev</a>
+        {% endif %}
+        {% for p in pages %}
+          {% if p %}
+          <a class="btn small {% if p == page %}primary{% endif %}" href="{{ url_for('categories.index', page=p, per_page=per_page) }}">{{ p }}</a>
+          {% else %}
+          <span class="ellipsis">…</span>
+          {% endif %}
+        {% endfor %}
+        {% if page < total_pages %}
+        <a class="btn small" href="{{ url_for('categories.index', page=page + 1, per_page=per_page) }}">Next →</a>
+        {% endif %}
+      </div>
+    </div>
     <p class="hint">A category with transactions cannot be deleted.</p>
   </section>
 </div>

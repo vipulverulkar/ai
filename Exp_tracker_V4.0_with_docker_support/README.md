@@ -146,7 +146,7 @@ The **Data** page is split into numbered sections so backup and restore can't
 be mixed up:
 
 1. **Backup (download, safe)** — SQL dump covering categories, budgets,
-   transactions, users and recurrences. It works identically on both backends,
+   transactions, users and recurring transactions. It works identically on both backends,
    and a backup taken on one restores cleanly on the other. A legacy `.json`
    download is also available.
 2. **Restore from backup file (destructive)** — upload a `.sql` dump (or a
@@ -205,7 +205,7 @@ screenshots/      README screenshots
 Schema: `categories(id, name, type)` · `transactions(id, amount*, type,
 category_id, date, note, currency, orig_amount, split_group, user_id,
 deleted_at)` · `budgets(id, category_id, monthly_limit*)` ·
-`recurrences(id, amount*, frequency, next_run_date, active, …)` ·
+`recurring_transactions(id, amount*, frequency, next_run_date, active, …)` ·
 `users(id, username, password_hash, role, totp_*, session_timeout_minutes)` ·
-`audit_log(id, user_id, action, target_*, details)` — `*` = integer cents in
+`audit_logs(id, user_id, action, target_*, details)` — `*` = integer cents in
 the base currency.

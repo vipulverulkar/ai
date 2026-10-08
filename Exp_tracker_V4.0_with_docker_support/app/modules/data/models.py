@@ -24,13 +24,16 @@ from ..transactions import models as transaction_models
 ROW_LIMIT = 2000
 
 BACKUP_VERSION = 1
-BACKUP_TABLES = ("categories", "budgets", "transactions", "users", "recurrences")
+BACKUP_TABLES = ("categories", "budgets", "transactions", "users", "recurring_transactions")
+
+# Legacy table names accepted on restore (old backups keep working).
+BACKUP_ALIASES = {"recurrences": "recurring_transactions", "audit_log": "audit_logs"}
 
 # Money columns exported in rupees (major units) per table.
 _MONEY_COLS = {
     "transactions": ("amount", "orig_amount"),
     "budgets": ("monthly_limit",),
-    "recurrences": ("amount", "orig_amount"),
+    "recurring_transactions": ("amount", "orig_amount"),
 }
 
 
@@ -52,7 +55,7 @@ def _rates():
 
 
 def import_categories(db, text):
-    """CSV columns: name,type — existing names are left untouched."""
+    """CSV columns: name (text, required, ≤50 chars, unique), type (income|expense, required) — existing names are left untouched."""
     reader = csv.DictReader(io.StringIO(text))
     inserted, skipped = 0, 0
     for i, row in enumerate(reader, start=1):
@@ -75,7 +78,7 @@ def import_categories(db, text):
 
 
 def import_budgets(db, text):
-    """CSV columns: category,monthly_limit — upserted by category name.
+    """CSV columns: category (text, required, existing expense category name), monthly_limit (number, required, > 0 rupees) — upserted by category name.
 
     Unknown, non-expense or savings-bucket categories are skipped.
     """
@@ -104,7 +107,7 @@ def import_budgets(db, text):
 
 
 def import_transactions(db, text, user_id=None):
-    """CSV columns: date,type,category,amount,note[,owner].
+    """CSV columns: date (YYYY-MM-DD, required), type (income|expense, required), category (text, required), amount (number > 0 rupees, required), note (text ≤200, optional), owner (username, optional), currency (3-letter code, optional, default INR).
 
     Delegates to the transactions module (unknown categories auto-created,
     rows attributed to the named owner or user_id).
@@ -125,7 +128,7 @@ CSV_RESTORE_REQUIRED = {
 CSV_RESTORE_HEADERS = {
     "categories": "name,type",
     "budgets": "category,monthly_limit",
-    "transactions": "date,type,category,amount,note[,owner]",
+    "transactions": "date,type,category,amount (required) + note,owner,currency (optional)",
 }
 
 
@@ -159,7 +162,7 @@ def validate_csv_text(text, key, label):
 def restore_from_csv(db, csv_texts, user_id=None):
     """Replace data tables from CSV texts ({key: text}) — users are preserved.
 
-    CSV has no users/recurrences format, so: users are never wiped, and any
+    CSV has no users/recurring-transactions format, so: users are never wiped, and any
     existing recurring schedules are removed (reported back so the UI can say
     so). Default categories are re-seeded after the wipe so budgets that
     reference them keep working when no categories file is uploaded.
@@ -178,16 +181,17 @@ def restore_from_csv(db, csv_texts, user_id=None):
         if err:
             return None, err
     try:
-        rec_removed = db.execute("SELECT COUNT(*) FROM recurrences").fetchone()[0]
+        rec_removed = db.execute("SELECT COUNT(*) FROM recurring_transactions").fetchone()[0]
     except DB_ERRORS:
         rec_removed = 0
     try:
         # FK-safe wipe: children first. Users are deliberately preserved.
-        for table in ("transactions", "budgets", "recurrences", "categories"):
+        for table in ("transactions", "budgets", "recurring_transactions", "categories"):
             db.execute(f"DELETE FROM {table}")
         reseeded = category_models.seed_defaults(db)
         db.commit()
-        results = {"recurrences_removed": rec_removed, "defaults_reseeded": reseeded}
+        results = {"recurring_transactions_removed": rec_removed,
+                   "recurrences_removed": rec_removed, "defaults_reseeded": reseeded}
         if "categories" in present:
             results["categories"] = import_categories(db, present["categories"])
         else:
@@ -314,10 +318,22 @@ def _opt_backup_date(row, key, label):
             f"{label}: {key} must look like YYYY-MM-DD (got {value!r}).")
 
 
+def _normalize_backup_data(data):
+    """Map legacy backup keys to current table names (old backups keep working)."""
+    data = dict(data)
+    for old, new in BACKUP_ALIASES.items():
+        if old in data and new not in data:
+            data[new] = data.pop(old)
+        elif old in data:
+            data.pop(old, None)
+    return data
+
+
 def _validate_backup(payload):
     """Return (data, error_msg). data is None when the payload is invalid.
 
     Errors are written for end users (shown verbatim after "Restore failed:").
+    Legacy keys (e.g. 'recurrences') are accepted and normalized.
     """
     if not isinstance(payload, dict):
         return None, "Backup file is not a JSON object. Please upload an Expense Tracker (.json) backup."
@@ -338,6 +354,7 @@ def _validate_backup(payload):
     data = payload.get("data")
     if not isinstance(data, dict):
         return None, "Backup file is missing the 'data' object. The file may be corrupted."
+    data = _normalize_backup_data(data)
     for table in BACKUP_TABLES:
         rows = data.get(table, [])
         if not isinstance(rows, list):
@@ -370,10 +387,13 @@ def describe_backup(payload):
 
 
 def summarize_counts(counts):
-    """'5 categories, 1 budget, 4 transactions, 1 user, 1 recurrence' (skips zeros)."""
+    """'5 categories, 1 budget, 4 transactions, 1 user, 1 recurring schedule' (skips zeros)."""
     labels = (("categories", "categories"), ("budgets", "budgets"),
               ("transactions", "transactions"), ("users", "users"),
-              ("recurrences", "recurrences"))
+              ("recurring_transactions", "recurring_transactions"))
+    # Legacy key from old backups.
+    if "recurring_transactions" not in counts and "recurrences" in counts:
+        counts = {**counts, "recurring_transactions": counts.get("recurrences", 0)}
     parts = [f"{counts.get(k, 0)} {label}"
              for k, label in labels if counts.get(k, 0)]
     return ", ".join(parts) or "0 rows"
@@ -396,7 +416,7 @@ def restore_backup(db, payload):
         # FK-safe wipe: children first.
         db.execute("DELETE FROM transactions")
         db.execute("DELETE FROM budgets")
-        db.execute("DELETE FROM recurrences")
+        db.execute("DELETE FROM recurring_transactions")
         db.execute("DELETE FROM categories")
         db.execute("DELETE FROM users")
 
@@ -514,7 +534,7 @@ def restore_backup(db, payload):
                  row.get("created_at") or None, _opt_id(row, "user_id", label),
                  code, orig, row.get("split_group") or None),
             )
-        for n, row in enumerate(data.get("recurrences", []), start=1):
+        for n, row in enumerate(data.get("recurring_transactions", []), start=1):
             label = f"Recurring row {n} ('{str(row.get('note') or '')[:30]}')"
             freq = str(row.get("frequency", "")).strip().lower()
             if freq not in ("daily", "weekly", "monthly", "yearly"):
@@ -562,7 +582,7 @@ def restore_backup(db, payload):
                     f"{label}: type must be 'income' or 'expense' "
                     f"(got {row.get('type')!r}).")
             db.execute(
-                """INSERT INTO recurrences
+                """INSERT INTO recurring_transactions
                    (id, user_id, amount, type, category_id, note, currency,
                     orig_amount, frequency, next_run_date, start_date, end_date,
                     active, last_run_at, created_at)
@@ -667,10 +687,10 @@ def export_sql_backup(db):
         f"-- tables: {', '.join(BACKUP_TABLES)}",
         "",
     ]
-    for table in ("transactions", "budgets", "recurrences", "categories", "users"):
+    for table in ("transactions", "budgets", "recurring_transactions", "categories", "users"):
         lines.append(f'DELETE FROM "{table}";')
     lines.append("")
-    for table in ("users", "categories", "budgets", "transactions", "recurrences"):
+    for table in ("users", "categories", "budgets", "transactions", "recurring_transactions"):
         rows = db.execute(f"SELECT * FROM {table} ORDER BY id").fetchall()
         for r in rows:
             cols = [c for c in dict(r).keys() if c not in _SKIP_DUMP_COLS]
@@ -771,6 +791,7 @@ def restore_sql_backup(db, sql_text):
     a crafted file cannot touch other tables). File DELETEs are validated
     but the wipe is redone in FK-safe order; INSERTs run in dependency
     order. All-or-nothing: any failure rolls back with no changes made.
+    Legacy table names (e.g. recurrences) are accepted and mapped.
 
     Returns (counts_dict, error_msg) — counts is None on failure.
     """
@@ -803,18 +824,25 @@ def restore_sql_backup(db, sql_text):
             continue
         dm = _DELETE_SQL_RE.match(s)
         if dm:
-            if dm.group(1) not in BACKUP_TABLES:
+            name = BACKUP_ALIASES.get(dm.group(1), dm.group(1))
+            if name not in BACKUP_TABLES:
                 return None, (
                     f"Backup targets unknown table '{dm.group(1)}'. "
                     f"The file may be corrupted.")
             continue  # wipe is redone below in FK-safe order
         im = _INSERT_SQL_RE.match(s)
         if im:
-            if im.group(1) not in BACKUP_TABLES:
+            raw_name = im.group(1)
+            name = BACKUP_ALIASES.get(raw_name, raw_name)
+            if name not in BACKUP_TABLES:
                 return None, (
-                    f"Backup targets unknown table '{im.group(1)}'. "
+                    f"Backup targets unknown table '{raw_name}'. "
                     f"The file may be corrupted.")
-            inserts_by_table[im.group(1)].append(s)
+            if name != raw_name:
+                # Rewrite legacy table name to the current one.
+                s = re.sub(r'^INSERT\s+INTO\s+"?' + re.escape(raw_name) + r'"?',
+                           f'INSERT INTO "{name}"', s, count=1, flags=re.I)
+            inserts_by_table[name].append(s)
             continue
         preview = (s[:60] + "…") if len(s) > 60 else s
         return None, (
@@ -827,12 +855,12 @@ def restore_sql_backup(db, sql_text):
             "choose a non-empty backup file.")
     try:
         # FK-safe wipe: children first (mirrors the JSON restore).
-        for table in ("transactions", "budgets", "recurrences",
+        for table in ("transactions", "budgets", "recurring_transactions",
                       "categories", "users"):
             db.execute(f"DELETE FROM {table}")
         # Parents first so foreign keys resolve.
         for table in ("users", "categories", "budgets",
-                      "transactions", "recurrences"):
+                      "transactions", "recurring_transactions"):
             for stmt in inserts_by_table[table]:
                 db.execute_raw(stmt)
         if getattr(db, "engine", "sqlite") == "pg":

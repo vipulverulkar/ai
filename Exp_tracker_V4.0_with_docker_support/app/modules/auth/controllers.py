@@ -7,6 +7,7 @@ from flask import current_app, flash, g, jsonify, redirect, render_template, \
 
 from ... import limiter
 from ...db import get_db, log_action
+from ...helpers import page_window, paginate
 from . import bp, models
 
 PUBLIC_ENDPOINTS = {"auth.login", "auth.login_totp", "healthz", "metrics", "static"}
@@ -282,12 +283,21 @@ def delete_user(user_id):
 @admin_required
 def audit():
     db = get_db()
+    total = db.execute("SELECT COUNT(*) FROM audit_logs").fetchone()[0]
+    page, per_page, total_pages, offset = paginate(
+        total, request.args.get("page"), request.args.get("per_page"))
     rows = db.execute(
-        """SELECT a.*, u.username AS actor FROM audit_log a
+        """SELECT a.*, u.username AS actor FROM audit_logs a
            LEFT JOIN users u ON u.id=a.user_id
-           ORDER BY a.id DESC LIMIT 200""").fetchall()
+           ORDER BY a.id DESC LIMIT ? OFFSET ?""",
+        (per_page, offset)).fetchall()
     retention = current_app.config.get("AUDIT_RETENTION_DAYS") or 0
-    return render_template("auth/audit.html", entries=rows, retention=retention)
+    return render_template("auth/audit.html", entries=rows, retention=retention,
+                           page=page, per_page=per_page, total=total,
+                           total_pages=total_pages,
+                           start=offset + 1 if total else 0,
+                           end=min(offset + per_page, total),
+                           pages=page_window(page, total_pages))
 
 
 @bp.route("/audit/purge", methods=["POST"])
@@ -303,7 +313,7 @@ def audit_purge():
     days = max(1, days)
     cutoff = (datetime.datetime.now() - datetime.timedelta(days=days)) \
         .strftime("%Y-%m-%d %H:%M:%S")
-    cur = db.execute("DELETE FROM audit_log WHERE timestamp < ?", (cutoff,))
+    cur = db.execute("DELETE FROM audit_logs WHERE timestamp < ?", (cutoff,))
     db.commit()
     flash(f"Purged {cur.rowcount} audit entries older than {days} day(s).", "success")
     return redirect(url_for("auth.audit"))

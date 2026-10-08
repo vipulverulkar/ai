@@ -147,7 +147,7 @@ def forecast(db, months_ahead=3):
     norm = {"daily": 30.44, "weekly": 4.348, "monthly": 1.0, "yearly": 1 / 12}
     rec = db.execute(
         "SELECT r.amount, r.type, r.frequency, COALESCE(c.is_savings, 0) AS is_sav"
-        " FROM recurrences r LEFT JOIN categories c ON c.id=r.category_id"
+        " FROM recurring_transactions r LEFT JOIN categories c ON c.id=r.category_id"
         " WHERE r.active=1 AND r.category_id IS NOT NULL").fetchall()
     rec_inc = round(sum(from_cents(r["amount"]) * norm[r["frequency"]]
                         for r in rec if r["type"] == "income"), 2)

@@ -181,7 +181,7 @@ def _purge_audit(app):
         cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
         conn = connect(app.config)
         try:
-            conn.execute("DELETE FROM audit_log WHERE timestamp < ?", (cutoff,))
+            conn.execute("DELETE FROM audit_logs WHERE timestamp < ?", (cutoff,))
             conn.commit()
         finally:
             conn.close()

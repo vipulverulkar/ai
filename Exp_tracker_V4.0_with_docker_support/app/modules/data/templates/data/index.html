@@ -15,14 +15,14 @@
 <section class="panel">
   <div class="panel-head">
     <span class="pic">💾</span>
-    <div><h2>1 · Backup — download a copy</h2><p>Safe: downloading changes nothing. SQL dump of categories, budgets, transactions, users and recurrences — works on SQLite and PostgreSQL</p></div>
+    <div><h2>1 · Backup — download a copy</h2><p>Safe: downloading changes nothing. SQL dump of categories, budgets, transactions, users and recurring transactions — works on SQLite and PostgreSQL</p></div>
   </div>
   <div class="totals-bar" aria-label="Current database contents">
     <span class="total-chip">{{ db_stats.categories }} categories</span>
     <span class="total-chip">{{ db_stats.budgets }} budgets</span>
     <span class="total-chip">{{ db_stats.transactions }} transactions</span>
     <span class="total-chip">{{ db_stats.users }} users</span>
-    <span class="total-chip">{{ db_stats.recurrences }} recurring</span>
+    <span class="total-chip">{{ db_stats.recurring_transactions }} recurring</span>
   </div>
   <div style="display:flex;gap:8px;flex-wrap:wrap">
     <a class="btn primary" href="{{ url_for('data.backup') }}">⬇ Download backup (.sql)</a>
@@ -103,22 +103,25 @@
     <div><h2>Expected CSV formats</h2><p>First row must be the header; UTF-8 encoding</p></div>
   </div>
   <div class="table-wrap"><table>
-    <thead><tr><th>File</th><th>Columns</th><th>Notes</th></tr></thead>
+    <thead><tr><th>File</th><th>Columns</th><th>Data types</th><th>Notes</th></tr></thead>
     <tbody>
       <tr>
         <td class="cat-name">categories.csv</td>
         <td><code>name,type</code></td>
-        <td>type is <code>income</code> or <code>expense</code> · existing names are skipped</td>
+        <td><code>name</code>: text, required, ≤50 chars, unique · <code>type</code>: text, required, <code>income</code> | <code>expense</code></td>
+        <td>existing names are skipped</td>
       </tr>
       <tr>
         <td class="cat-name">budgets.csv</td>
         <td><code>category,monthly_limit</code></td>
+        <td><code>category</code>: text, required, existing category name · <code>monthly_limit</code>: number, required, &gt; 0 in rupees (e.g. <code>2500</code> or <code>2500.00</code>)</td>
         <td>matched by category name (spending categories only — savings buckets are skipped) · existing budgets are updated</td>
       </tr>
       <tr>
         <td class="cat-name">transactions.csv</td>
-        <td><code>date,type,category,amount,note[,owner]</code></td>
-        <td>date as YYYY-MM-DD · unknown categories are auto-created · owner must be an existing user (else attributed to you)</td>
+        <td><code>date, type, category, amount</code> required + <code>note, owner, currency</code> optional</td>
+        <td><code>date</code>: date, required, <code>YYYY-MM-DD</code> · <code>type</code>: text, required, <code>income</code> | <code>expense</code> · <code>category</code>: text, required (auto-created) · <code>amount</code>: number, required, &gt; 0 in rupees (e.g. <code>999</code> or <code>999.50</code>) · <code>note</code>: text, optional, ≤200 chars · <code>owner</code>: text, optional, existing username (else attributed to you) · <code>currency</code>: text, optional, 3-letter code, default <code>INR</code></td>
+        <td>header example: <code>date,type,category,amount,note,owner,currency</code> — extra columns like <code>id</code> are ignored · unknown categories are auto-created</td>
       </tr>
     </tbody>
   </table></div>
@@ -194,7 +197,7 @@
             refreshButton();
             return;
           }
-          var tables = ["categories", "budgets", "transactions", "users", "recurrences"];
+          var tables = ["categories", "budgets", "transactions", "users", "recurring_transactions"];
           var parts = [], total = 0;
           tables.forEach(function (t) {
             var re = new RegExp('INSERT\\s+INTO\\s+"?' + t + '"?', 'gi');
@@ -223,7 +226,7 @@
           refreshButton();
           return;
         }
-        var tables = ["categories", "budgets", "transactions", "users", "recurrences"];
+        var tables = ["categories", "budgets", "transactions", "users", "recurring_transactions"];
         var parts = [], total = 0;
         tables.forEach(function (t) {
           var n = payload.data[t] ? payload.data[t].length : 0;

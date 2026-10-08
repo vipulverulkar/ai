@@ -75,7 +75,7 @@
   <section class="panel">
     <div class="panel-head">
       <span class="pic">🗓️</span>
-      <div><h2>Scheduled</h2><p>{{ items|length }} recurrence(s)</p></div>
+      <div><h2>Scheduled</h2><p>{{ total }} recurrence(s)</p></div>
     </div>
     <div class="table-wrap"><table>
       <thead><tr><th>Note</th><th>Category</th><th>Frequency</th><th class="num">Amount</th><th>Starts</th><th>Next run</th><th>Ends</th><th>Status</th><th>Actions</th></tr></thead>
@@ -117,6 +117,33 @@
       {% endfor %}
       </tbody>
     </table></div>
+    <div class="pager">
+      <span class="pager-info">Showing {{ start }}–{{ end }} of {{ total }}</span>
+      <form method="get" action="{{ url_for('recurring.index') }}" class="per-page">
+        <label>Per page
+          <select name="per_page" onchange="this.form.submit()">
+            {% for n in [10, 25, 50, 100] %}
+            <option value="{{ n }}" {% if per_page == n %}selected{% endif %}>{{ n }}</option>
+            {% endfor %}
+          </select>
+        </label>
+      </form>
+      <div class="pager-links">
+        {% if page > 1 %}
+        <a class="btn small" href="{{ url_for('recurring.index', page=page - 1, per_page=per_page) }}">← Prev</a>
+        {% endif %}
+        {% for p in pages %}
+          {% if p %}
+          <a class="btn small {% if p == page %}primary{% endif %}" href="{{ url_for('recurring.index', page=p, per_page=per_page) }}">{{ p }}</a>
+          {% else %}
+          <span class="ellipsis">…</span>
+          {% endif %}
+        {% endfor %}
+        {% if page < total_pages %}
+        <a class="btn small" href="{{ url_for('recurring.index', page=page + 1, per_page=per_page) }}">Next →</a>
+        {% endif %}
+      </div>
+    </div>
     <p class="hint">Due recurrences are processed automatically when the dashboard loads
       (and via “Run due now”). Catch-up is capped: a schedule abandoned for over a year is paused.</p>
   </section>

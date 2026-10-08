@@ -39,12 +39,16 @@ def index():
 def _db_stats(db):
     """Live row counts shown on the page so users know what a backup holds."""
     stats = {}
-    for table in ("categories", "budgets", "transactions", "users", "recurrences"):
+    for table in ("categories", "budgets", "transactions", "users", "recurring_transactions"):
         try:
             stats[table] = db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
         except Exception:  # noqa: BLE001 — a missing table just shows 0
             stats[table] = 0
-    stats["total"] = sum(stats.values())
+    # Legacy template key.
+    stats["recurrences"] = stats.get("recurring_transactions", 0)
+    stats["total"] = sum(stats[t] for t in
+                         ("categories", "budgets", "transactions", "users",
+                          "recurring_transactions"))
     return stats
 
 
@@ -204,8 +208,10 @@ def restore_csv():
     else:
         detail = models.summarize_csv_results(results)
         rec_msg = ""
-        if results.get("recurrences_removed"):
-            rec_msg = (f" {results['recurrences_removed']} recurring schedule(s) removed "
+        rec_removed = results.get("recurring_transactions_removed",
+                                  results.get("recurrences_removed", 0))
+        if rec_removed:
+            rec_msg = (f" {rec_removed} recurring schedule(s) removed "
                        f"(CSV has no recurring format — use a .sql backup to keep them).")
         log_action(db, session.get("user"), "restore_csv", None, None, detail)
         flash(f"Restored from CSV — {detail}.{rec_msg} Users preserved.",

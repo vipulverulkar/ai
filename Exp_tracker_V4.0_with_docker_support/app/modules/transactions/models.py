@@ -293,6 +293,26 @@ def deleted_rows(db, limit=200):
     return rows
 
 
+def count_deleted(db):
+    return db.execute(
+        "SELECT COUNT(*) FROM transactions WHERE deleted_at IS NOT NULL").fetchone()[0]
+
+
+def deleted_page(db, per_page, offset):
+    rows = db.execute(
+        f"""SELECT t.*, c.name AS category_name, u.username AS owner_name
+            FROM transactions t JOIN categories c ON t.category_id=c.id
+            LEFT JOIN users u ON u.id=t.user_id
+            WHERE t.deleted_at IS NOT NULL
+            ORDER BY t.deleted_at DESC, t.id DESC LIMIT ? OFFSET ?""",
+        (per_page, offset)).fetchall()
+    for r in rows:
+        r["amount"] = from_cents(r["amount"])
+        if r["orig_amount"] is not None:
+            r["orig_amount"] = from_cents(r["orig_amount"])
+    return rows
+
+
 def restore(db, tx_id):
     """Undo a soft delete. Returns True when a row was restored."""
     cur = db.execute(
@@ -431,7 +451,7 @@ def export_rows(db, where, args, order_sql):
 
 
 def import_csv(db, text, user_id=None):
-    """Import CSV text (date,type,category,amount,note[,owner[,currency]]).
+    """Import CSV text — required columns date,type,category,amount; optional note,owner,currency.
 
     Unknown categories are auto-created. The optional owner column names the
     user the expense is managed for; unknown or blank owners fall back to

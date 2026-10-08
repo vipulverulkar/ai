@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS budgets (
     monthly_limit INTEGER NOT NULL CHECK (monthly_limit > 0),
     FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE
 );
-CREATE TABLE IF NOT EXISTS recurrences (
+CREATE TABLE IF NOT EXISTS recurring_transactions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
     amount INTEGER NOT NULL CHECK (amount > 0),
@@ -76,7 +76,7 @@ CREATE TABLE IF NOT EXISTS recurrences (
     last_run_at TEXT,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
-CREATE TABLE IF NOT EXISTS audit_log (
+CREATE TABLE IF NOT EXISTS audit_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
     action TEXT NOT NULL,
@@ -128,7 +128,7 @@ CREATE TABLE IF NOT EXISTS budgets (
     category_id INTEGER UNIQUE NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
     monthly_limit INTEGER NOT NULL CHECK (monthly_limit > 0)
 );
-CREATE TABLE IF NOT EXISTS recurrences (
+CREATE TABLE IF NOT EXISTS recurring_transactions (
     id SERIAL PRIMARY KEY,
     user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
     amount INTEGER NOT NULL CHECK (amount > 0),
@@ -145,7 +145,7 @@ CREATE TABLE IF NOT EXISTS recurrences (
     last_run_at TEXT,
     created_at TIMESTAMPTZ DEFAULT now()
 );
-CREATE TABLE IF NOT EXISTS audit_log (
+CREATE TABLE IF NOT EXISTS audit_logs (
     id SERIAL PRIMARY KEY,
     user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
     action TEXT NOT NULL,
@@ -433,16 +433,100 @@ def log_action(db, actor, action, target_table=None, target_id=None, details=Non
         except DB_ERRORS:
             user_id = None
     db.execute(
-        "INSERT INTO audit_log (user_id, action, target_table, target_id, details) VALUES (?,?,?,?,?)",
+        "INSERT INTO audit_logs (user_id, action, target_table, target_id, details) VALUES (?,?,?,?,?)",
         (user_id, action, target_table, target_id, details)
     )
     db.commit()
+
+
+def _rename_tables(conn):
+    """Rename legacy tables to generic plural names (idempotent).
+
+    - recurrences -> recurring_transactions
+    - audit_log -> audit_logs
+    Old target_table values stored inside audit logs are updated too.
+    """
+    for old, new in (("recurrences", "recurring_transactions"),
+                     ("audit_log", "audit_logs")):
+        try:
+            if conn.engine == "pg":
+                names = {r[0] for r in conn.execute(
+                    "SELECT tablename FROM pg_tables WHERE schemaname='public'").fetchall()}
+            else:
+                names = {r[0] for r in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        except DB_ERRORS:
+            try:
+                conn.rollback()
+            except DB_ERRORS:
+                pass
+            continue
+        if old not in names:
+            continue
+        if new not in names:
+            try:
+                conn.execute(f"ALTER TABLE {old} RENAME TO {new}")
+                conn.commit()
+            except DB_ERRORS:
+                try:
+                    conn.rollback()
+                except DB_ERRORS:
+                    pass
+            continue
+        # Both exist (schema created before rename ran): merge old rows
+        # into the new table, then drop the legacy table.
+        try:
+            if conn.engine == "pg":
+                old_cols = [r[0] for r in conn.execute(
+                    "SELECT column_name FROM information_schema.columns"
+                    f" WHERE table_name='{old}'").fetchall()]
+                new_cols = [r[0] for r in conn.execute(
+                    "SELECT column_name FROM information_schema.columns"
+                    f" WHERE table_name='{new}'").fetchall()]
+            else:
+                old_cols = [r[1] for r in conn.execute(
+                    f"SELECT * FROM pragma_table_info('{old}')").fetchall()]
+                new_cols = [r[1] for r in conn.execute(
+                    f"SELECT * FROM pragma_table_info('{new}')").fetchall()]
+            common = [c for c in old_cols if c in new_cols]
+            if common:
+                cols = ", ".join(common)
+                if conn.engine == "pg":
+                    conn.execute(
+                        f"INSERT INTO {new} ({cols}) SELECT {cols} FROM {old}"
+                        " ON CONFLICT (id) DO NOTHING")
+                else:
+                    conn.execute(
+                        f"INSERT OR IGNORE INTO {new} ({cols})"
+                        f" SELECT {cols} FROM {old}")
+            conn.execute(f"DROP TABLE {old}")
+            conn.commit()
+        except DB_ERRORS:
+            try:
+                conn.rollback()
+            except DB_ERRORS:
+                pass
+    # Fix stored table references from before the rename.
+    try:
+        conn.execute("UPDATE audit_logs SET target_table='recurring_transactions'"
+                     " WHERE target_table='recurrences'")
+        conn.execute("UPDATE audit_logs SET target_table='audit_logs'"
+                     " WHERE target_table='audit_log'")
+        conn.commit()
+    except DB_ERRORS:
+        try:
+            conn.rollback()
+        except DB_ERRORS:
+            pass
 
 
 def _migrate(conn):
     """Bring existing databases up to the current schema (idempotent)."""
     # 1. Handle money migration (REAL -> INTEGER cents)
     _migrate_money(conn)
+
+    # 1b. Rename legacy tables to generic plural names.
+    _rename_tables(conn)
 
     # 2. Add columns that may be missing in older databases.
     #    (table, column, declaration) — decl is valid for both engines.
@@ -457,10 +541,10 @@ def _migrate(conn):
         ("users", "role", "TEXT DEFAULT 'admin'"),
         ("users", "totp_secret", "TEXT"),
         ("users", "totp_enabled", "INTEGER DEFAULT 0"),
-        ("recurrences", "currency", "TEXT DEFAULT 'INR'"),
-        ("recurrences", "orig_amount", "INTEGER"),
-        ("recurrences", "start_date", "TEXT"),
-        ("recurrences", "end_date", "TEXT"),
+        ("recurring_transactions", "currency", "TEXT DEFAULT 'INR'"),
+        ("recurring_transactions", "orig_amount", "INTEGER"),
+        ("recurring_transactions", "start_date", "TEXT"),
+        ("recurring_transactions", "end_date", "TEXT"),
     ):
         try:
             conn.execute(f"SELECT {column} FROM {table} LIMIT 1").fetchone()

@@ -799,14 +799,14 @@ def test_recurring_crud_and_run_due(client):
     assert b"2026-01-05" in page.data  # start shown
     with client.application.app_context():
         db = get_db()
-        row = db.execute("SELECT id, amount FROM recurrences WHERE note='Rent'").fetchone()
+        row = db.execute("SELECT id, amount FROM recurring_transactions WHERE note='Rent'").fetchone()
     assert row["amount"] == 1200000  # cents
     # dashboard load auto-runs due items: Jan 5..Oct 5 (10 monthly runs by Oct 7)
     client.get("/")
     with client.application.app_context():
         db = get_db()
         n = db.execute("SELECT COUNT(*) FROM transactions WHERE note='Rent'").fetchone()[0]
-        sched = db.execute("SELECT next_run_date FROM recurrences WHERE note='Rent'").fetchone()[0]
+        sched = db.execute("SELECT next_run_date FROM recurring_transactions WHERE note='Rent'").fetchone()[0]
     assert n == 10
     assert sched == "2026-11-05"
     # pause stops generation
@@ -820,7 +820,7 @@ def test_recurring_crud_and_run_due(client):
     postf(client, f"/recurring/{row['id']}/delete", "/recurring")
     with client.application.app_context():
         assert get_db().execute(
-            "SELECT COUNT(*) FROM recurrences WHERE note='Rent'").fetchone()[0] == 0
+            "SELECT COUNT(*) FROM recurring_transactions WHERE note='Rent'").fetchone()[0] == 0
         assert get_db().execute(
             "SELECT COUNT(*) FROM transactions WHERE note='Rent'").fetchone()[0] == 10
     # invalid frequency rejected
@@ -830,7 +830,7 @@ def test_recurring_crud_and_run_due(client):
     assert r.status_code == 302
     with client.application.app_context():
         assert get_db().execute(
-            "SELECT COUNT(*) FROM recurrences WHERE note='bad'").fetchone()[0] == 0
+            "SELECT COUNT(*) FROM recurring_transactions WHERE note='bad'").fetchone()[0] == 0
 
 
 def test_recurring_start_and_end_dates(client):
@@ -846,7 +846,7 @@ def test_recurring_start_and_end_dates(client):
     with client.application.app_context():
         db = get_db()
         n = db.execute("SELECT COUNT(*) FROM transactions WHERE note='SIP'").fetchone()[0]
-        row = db.execute("SELECT next_run_date, active, end_date FROM recurrences"
+        row = db.execute("SELECT next_run_date, active, end_date FROM recurring_transactions"
                          " WHERE note='SIP'").fetchone()
     assert n == 3
     assert row["next_run_date"] == "2026-04-05" and row["active"] == 0
@@ -868,7 +868,7 @@ def test_recurring_start_and_end_dates(client):
     assert b"on or after the start date" in r.data
     with client.application.app_context():
         assert get_db().execute(
-            "SELECT COUNT(*) FROM recurrences WHERE note='bad-range'").fetchone()[0] == 0
+            "SELECT COUNT(*) FROM recurring_transactions WHERE note='bad-range'").fetchone()[0] == 0
     # legacy next_run_date field still accepted as the start
     r = postf(client, "/recurring", "/recurring", amount="100", type="expense",
               category_id=str(expense_cat), frequency="monthly",
@@ -876,7 +876,7 @@ def test_recurring_start_and_end_dates(client):
     assert r.status_code == 302
     with client.application.app_context():
         row = get_db().execute(
-            "SELECT start_date, end_date FROM recurrences WHERE note='legacy'").fetchone()
+            "SELECT start_date, end_date FROM recurring_transactions WHERE note='legacy'").fetchone()
     assert row["start_date"] == "2026-01-05" and row["end_date"] is None
 
 
@@ -916,7 +916,7 @@ def test_backup_json_legacy_roundtrip(client):
     payload = json.loads(r.data.decode())
     assert payload["app"] == "exptracker"
     assert {t: len(payload["data"][t]) for t in
-            ("categories", "budgets", "transactions", "users", "recurrences")}
+            ("categories", "budgets", "transactions", "users", "recurring_transactions")}
     assert len(payload["data"]["transactions"]) >= 1
     # backup amounts are human-readable rupees
     assert payload["data"]["transactions"][0]["amount"] == 250.0
@@ -1190,7 +1190,7 @@ def test_restore_pg_path_resets_sequences():
     counts, err = data_models.restore_backup(conn, payload)
     assert err is None, err
     assert counts == {"categories": 1, "budgets": 1, "transactions": 1,
-                      "users": 1, "recurrences": 0}
+                      "users": 1, "recurring_transactions": 0}
     stmts = [s for s, _ in seen]
     # sqlite-style ? placeholders translated for psycopg, no ? left behind
     assert any("%s" in s and s.startswith("INSERT INTO users") for s in stmts)
@@ -1514,7 +1514,7 @@ def test_recurring_currency(client):
     assert r.status_code == 302
     with client.application.app_context():
         db = get_db()
-        row = db.execute("SELECT amount, currency, orig_amount FROM recurrences"
+        row = db.execute("SELECT amount, currency, orig_amount FROM recurring_transactions"
                          " WHERE note='USD sub'").fetchone()
     assert row["amount"] == 50 * 83 * 100  # 50 USD -> 4,150.00 base in cents
     assert row["currency"] == "USD" and row["orig_amount"] == 5000
@@ -1641,7 +1641,7 @@ def test_restore_preserves_roles_and_recurrence_currency():
                        "role": "viewer", "totp_enabled": 1,
                        "totp_secret": "ABC234"}],
             "categories": [{"id": 1, "name": "Food", "type": "expense"}],
-            "recurrences": [{"id": 1, "user_id": 1, "amount": 100, "type": "expense",
+            "recurring_transactions": [{"id": 1, "user_id": 1, "amount": 100, "type": "expense",
                              "category_id": 1, "frequency": "monthly",
                              "next_run_date": "2026-01-01", "currency": "USD",
                              "orig_amount": 50, "active": 1}],
@@ -1650,4 +1650,4 @@ def test_restore_preserves_roles_and_recurrence_currency():
     conn = Connection(FakeRaw(), "pg")
     counts, err = data_models.restore_backup(conn, payload)
     assert err is None, err
-    assert counts["recurrences"] == 1 and counts["users"] == 1
+    assert counts["recurring_transactions"] == 1 and counts["users"] == 1

@@ -26,15 +26,30 @@ def _advance(d, frequency):
 def all(db):
     rows = db.execute(
         """SELECT r.*, c.name AS category_name, u.username AS owner_name
-           FROM recurrences r
+           FROM recurring_transactions r
            LEFT JOIN categories c ON c.id=r.category_id
            LEFT JOIN users u ON u.id=r.user_id
            ORDER BY r.next_run_date, r.id""").fetchall()
     return [_row_out(r) for r in rows]
 
 
+def count(db):
+    return db.execute("SELECT COUNT(*) FROM recurring_transactions").fetchone()[0]
+
+
+def page(db, per_page, offset):
+    rows = db.execute(
+        """SELECT r.*, c.name AS category_name, u.username AS owner_name
+           FROM recurring_transactions r
+           LEFT JOIN categories c ON c.id=r.category_id
+           LEFT JOIN users u ON u.id=r.user_id
+           ORDER BY r.next_run_date, r.id LIMIT ? OFFSET ?""",
+        (per_page, offset)).fetchall()
+    return [_row_out(r) for r in rows]
+
+
 def get(db, rec_id):
-    r = db.execute("SELECT * FROM recurrences WHERE id=?", (rec_id,)).fetchone()
+    r = db.execute("SELECT * FROM recurring_transactions WHERE id=?", (rec_id,)).fetchone()
     return _row_out(r) if r else None
 
 
@@ -48,7 +63,7 @@ def create(db, amount_cents, ttype, category_id, note, frequency, start,
            user_id=None, currency=None, orig_amount=None, end_date=None):
     from ..transactions import models as tx_models
     db.execute(
-        """INSERT INTO recurrences (user_id, amount, type, category_id, note,
+        """INSERT INTO recurring_transactions (user_id, amount, type, category_id, note,
            currency, orig_amount, frequency, next_run_date, start_date, end_date)
            VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
         (user_id, amount_cents, ttype, category_id, note,
@@ -68,12 +83,12 @@ def is_ended(row):
 
 
 def set_active(db, rec_id, active):
-    db.execute("UPDATE recurrences SET active=? WHERE id=?", (1 if active else 0, rec_id))
+    db.execute("UPDATE recurring_transactions SET active=? WHERE id=?", (1 if active else 0, rec_id))
     db.commit()
 
 
 def delete(db, rec_id):
-    db.execute("DELETE FROM recurrences WHERE id=?", (rec_id,))
+    db.execute("DELETE FROM recurring_transactions WHERE id=?", (rec_id,))
     db.commit()
 
 
@@ -119,7 +134,7 @@ def validate(db, amount_raw, ttype, category_id, frequency, start_raw,
 
 def due_count(db, today):
     return db.execute(
-        "SELECT COUNT(*) FROM recurrences WHERE active=1 AND next_run_date<=?"
+        "SELECT COUNT(*) FROM recurring_transactions WHERE active=1 AND next_run_date<=?"
         " AND (end_date IS NULL OR next_run_date <= end_date)",
         (today.isoformat(),)).fetchone()[0]
 
@@ -132,10 +147,10 @@ def run_due(db, today):
     or its end date (capped for safety). Schedules that run past their end
     date are auto-finished. Returns the number of transactions created.
     """
-    db.execute("UPDATE recurrences SET active=0 WHERE active=1"
+    db.execute("UPDATE recurring_transactions SET active=0 WHERE active=1"
                " AND end_date IS NOT NULL AND next_run_date > end_date")
     rows = db.execute(
-        "SELECT * FROM recurrences WHERE active=1 AND next_run_date<=?"
+        "SELECT * FROM recurring_transactions WHERE active=1 AND next_run_date<=?"
         " AND (end_date IS NULL OR next_run_date <= end_date)",
         (today.isoformat(),)).fetchall()
     created = 0
@@ -155,19 +170,19 @@ def run_due(db, today):
                 (r["amount"], r["type"], r["category_id"], run_on,
                  r["note"] or "", r["user_id"]))
             db.execute(
-                "UPDATE recurrences SET next_run_date=?, last_run_at=? WHERE id=?",
+                "UPDATE recurring_transactions SET next_run_date=?, last_run_at=? WHERE id=?",
                 (_advance(datetime.strptime(run_on, "%Y-%m-%d").date(),
                           r["frequency"]).isoformat(),
                  today_iso, r["id"]))
             created += 1
             iterations += 1
             # refresh the row so the while-loop condition uses the new date
-            r = db.execute("SELECT * FROM recurrences WHERE id=?", (r["id"],)).fetchone()
+            r = db.execute("SELECT * FROM recurring_transactions WHERE id=?", (r["id"],)).fetchone()
         # skip runaway schedules (e.g. daily recurrence abandoned for years)
         if iterations >= MAX_CATCHUP_ITERATIONS and r["next_run_date"] <= today_iso:
-            db.execute("UPDATE recurrences SET active=0 WHERE id=?", (r["id"],))
-        r = db.execute("SELECT * FROM recurrences WHERE id=?", (r["id"],)).fetchone()
+            db.execute("UPDATE recurring_transactions SET active=0 WHERE id=?", (r["id"],))
+        r = db.execute("SELECT * FROM recurring_transactions WHERE id=?", (r["id"],)).fetchone()
         if r["end_date"] and r["next_run_date"] > r["end_date"]:
-            db.execute("UPDATE recurrences SET active=0 WHERE id=?", (r["id"],))
+            db.execute("UPDATE recurring_transactions SET active=0 WHERE id=?", (r["id"],))
     db.commit()
     return created

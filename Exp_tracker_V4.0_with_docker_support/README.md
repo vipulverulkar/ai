@@ -153,12 +153,11 @@ be mixed up:
    legacy `.json` snapshot) to replace all current data. Guarded by a
    confirmation checkbox, validated before anything is wiped, id sequences
    reset — and existing data is left untouched if the file is invalid.
-3. **Restore from CSV files (destructive)** — replaces categories, budgets
-   and transactions from uploaded CSVs. Users are always preserved (CSV has
-   no user format); recurring schedules are removed. Use a `.sql` backup for
-   a full-fidelity restore.
-4. **Import CSV files (safe, additive)** — adds rows to the existing data,
-   never deletes.
+3. **CSV files — one picker, two modes** — upload the same three CSVs and
+   choose **Add** (appends rows, never deletes) or **Replace** (wipes and
+   re-imports the data tables behind a confirmation checkbox). Users are
+   always preserved (CSV has no user format); recurring schedules are
+   removed. Use a `.sql` backup for a full-fidelity restore.
 
 No upload size limit is enforced. For raw engine-level copies you can
 additionally copy the SQLite file or use `pg_dump`.

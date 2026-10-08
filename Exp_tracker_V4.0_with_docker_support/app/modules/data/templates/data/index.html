@@ -5,7 +5,7 @@
 <div class="page-head">
   <div>
     <h1>Backup & restore</h1>
-    <p class="sub">1 · Download a backup &nbsp;→&nbsp; 2 · Restore from a file &nbsp;→&nbsp; 3 · Or import CSVs (additive)</p>
+    <p class="sub">1 · Download a backup &nbsp;→&nbsp; 2 · Restore from a file &nbsp;→&nbsp; 3 · CSV import or restore</p>
   </div>
   <div style="display:flex;gap:8px;align-items:center">
     <span class="badge" title="Currently active database">🗄 {{ db_label }}</span>
@@ -62,63 +62,36 @@
 
 <section class="panel">
   <div class="panel-head">
-    <span class="pic">⚠️</span>
-    <div><h2>3 · Restore — from CSV files</h2><p>Destructive: replaces categories, budgets and transactions. Users are kept.</p></div>
+    <span class="pic">📥</span>
+    <div><h2>3 · CSV files — pick files, then Import or Replace</h2><p>Same three files; the button you press decides what happens</p></div>
   </div>
   {% if is_admin %}
-  <form id="csv-restore-form" method="post" action="{{ url_for('data.restore_csv') }}" enctype="multipart/form-data">
+  <form id="csv-form" method="post" action="{{ url_for('data.import_data') }}" enctype="multipart/form-data">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="row">
       <label style="flex:1">Categories CSV
-        <input class="csv-restore-file" type="file" name="categories_file" accept=".csv">
+        <input class="csv-file" type="file" name="categories_file" accept=".csv">
       </label>
       <label style="flex:1">Budgets CSV
-        <input class="csv-restore-file" type="file" name="budgets_file" accept=".csv">
+        <input class="csv-file" type="file" name="budgets_file" accept=".csv">
       </label>
       <label style="flex:1">Transactions CSV
-        <input class="csv-restore-file" type="file" name="transactions_file" accept=".csv">
+        <input class="csv-file" type="file" name="transactions_file" accept=".csv">
       </label>
     </div>
-    <p class="hint" id="csv-restore-meta">No files chosen. Upload any combination — at least one file is required.</p>
-    <div id="csv-restore-error" class="alert over" style="display:none" role="alert"></div>
+    <p class="hint" id="csv-meta">No files chosen. Upload any combination — at least one file is required.</p>
+    <div id="csv-error" class="alert over" style="display:none" role="alert"></div>
     <div class="row" style="margin-top:12px">
-      <label style="flex:1"><input id="csv-restore-confirm" type="checkbox" name="confirm" value="yes"> I understand restoring <b>replaces categories, budgets and transactions</b></label>
+      <label style="flex:1"><input id="csv-confirm" type="checkbox" name="confirm" value="yes"> Replace only: I understand this <b>deletes current categories, budgets and transactions</b> (users are kept)</label>
     </div>
     <div class="row" style="margin-top:12px">
-      <button id="csv-restore-btn" class="btn primary" type="submit" style="flex:1" disabled>Choose at least one CSV file</button>
+      <button id="csv-import-btn" class="btn primary" type="submit" style="flex:1"
+              formaction="{{ url_for('data.import_data') }}" disabled>➕ Import — add to existing data</button>
+      <button id="csv-replace-btn" class="btn danger" type="submit" style="flex:1"
+              formaction="{{ url_for('data.restore_csv') }}" disabled>⚠️ Replace — wipe &amp; re-import</button>
     </div>
   </form>
-  <p class="hint">Users and login accounts are always preserved. Recurring schedules are removed (CSV has no recurring format). For a complete restore — including users and schedules — use a <b>.sql backup</b> above.</p>
-  {% else %}
-  <p class="hint">View-only access — restore requires an admin account.</p>
-  {% endif %}
-</section>
-
-<section class="panel">
-  <div class="panel-head">
-    <span class="pic">➕</span>
-    <div><h2>4 · Import — add CSV rows</h2><p>Safe & additive: adds to existing data, never deletes. All files optional — import any combination at once</p></div>
-  </div>
-  {% if is_admin %}
-  <form method="post" action="{{ url_for('data.import_data') }}" enctype="multipart/form-data">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <div class="row">
-      <label style="flex:1">Categories CSV
-        <input type="file" name="categories_file" accept=".csv">
-      </label>
-      <label style="flex:1">Budgets CSV
-        <input type="file" name="budgets_file" accept=".csv">
-      </label>
-      <label style="flex:1">Transactions CSV
-        <input type="file" name="transactions_file" accept=".csv">
-      </label>
-    </div>
-    <div class="row" style="margin-top:12px">
-      <button class="btn primary" type="submit" style="flex:1">Import selected files</button>
-    </div>
-  </form>
-  <p class="hint">Files are processed in dependency order: categories → budgets → transactions.
-    Up to {{ 2000 }} rows per file.</p>
+  <p class="hint"><b>Import</b> appends rows — existing names are skipped, nothing is ever deleted. <b>Replace</b> wipes and re-imports the data tables (needs the checkbox); users are always preserved, recurring schedules are removed (CSV has no recurring format — use a <b>.sql backup</b> above for those). Files run categories → budgets → transactions, up to 2000 rows each.</p>
   {% else %}
   <p class="hint">View-only access — importing requires an admin account.</p>
   {% endif %}
@@ -280,40 +253,30 @@
   if (confirmBox) confirmBox.addEventListener("change", refreshButton);
   refreshButton();
 
-  // CSV restore: enable only with >= 1 .csv file + confirmation.
-  var csvInputs = document.querySelectorAll(".csv-restore-file");
-  var csvConfirm = document.getElementById("csv-restore-confirm");
-  var csvBtn = document.getElementById("csv-restore-btn");
-  var csvMeta = document.getElementById("csv-restore-meta");
-  var csvErr = document.getElementById("csv-restore-error");
-  if (csvInputs.length && csvBtn) {
-    var csvValid = false;
+  // Unified CSV form: one file picker, two buttons with their own targets
+  // (formaction). No mode to get wrong: Import appends, Replace wipes.
+  // Works with JS disabled too — Replace still needs its checkbox server-side.
+  var csvForm = document.getElementById("csv-form");
+  var csvInputs = document.querySelectorAll(".csv-file");
+  var csvConfirm = document.getElementById("csv-confirm");
+  var csvImportBtn = document.getElementById("csv-import-btn");
+  var csvReplaceBtn = document.getElementById("csv-replace-btn");
+  var csvMeta = document.getElementById("csv-meta");
+  var csvErr = document.getElementById("csv-error");
+  if (csvForm && csvInputs.length && csvImportBtn && csvReplaceBtn) {
     var refreshCsv = function () {
       var names = [];
-      csvValid = true;
-      csvInputs.forEach(function (inp) {
-        var f = inp.files && inp.files[0];
-        if (!f) return;
-        if (!/\.csv$/i.test(f.name)) {
-          csvValid = false;
-        } else if (f.size === 0) {
-          csvValid = false;
-        } else {
-          names.push(f.name);
-        }
-      });
-      var hasFile = names.length > 0;
-      if (!hasFile) {
-        csvMeta.textContent = "No files chosen. Upload any combination — at least one file is required.";
-      } else {
-        csvMeta.textContent = "Selected: " + names.join(", ");
-      }
       var bad = false;
       csvInputs.forEach(function (inp) {
         var f = inp.files && inp.files[0];
-        if (f && !/\.csv$/i.test(f.name)) bad = true;
-        if (f && f.size === 0) bad = true;
+        if (!f) return;
+        if (!/\.csv$/i.test(f.name) || f.size === 0) bad = true;
+        else names.push(f.name);
       });
+      var hasFile = names.length > 0;
+      csvMeta.textContent = !hasFile
+        ? "No files chosen. Upload any combination — at least one file is required."
+        : "Selected: " + names.join(", ");
       if (bad) {
         csvErr.style.display = "block";
         csvErr.textContent = "Each file must be a non-empty .csv file.";
@@ -321,12 +284,8 @@
         csvErr.style.display = "none";
         csvErr.textContent = "";
       }
-      var ready = hasFile && !bad && csvConfirm && csvConfirm.checked;
-      csvBtn.disabled = !ready;
-      csvBtn.textContent = !hasFile ? "Choose at least one CSV file"
-        : bad ? "Fix the file selection to continue"
-        : !(csvConfirm && csvConfirm.checked) ? "Tick the confirmation to enable restore"
-        : "Restore from CSV — replaces data tables";
+      csvImportBtn.disabled = !hasFile || bad;
+      csvReplaceBtn.disabled = !hasFile || bad || !(csvConfirm && csvConfirm.checked);
     };
     csvInputs.forEach(function (inp) { inp.addEventListener("change", refreshCsv); });
     if (csvConfirm) csvConfirm.addEventListener("change", refreshCsv);

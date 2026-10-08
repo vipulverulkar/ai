@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}{{ profile_user["username"] }} – Expense Tracker{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <div>
+    <h1>{{ profile_user["username"] }}</h1>
+    <p class="sub">Expenses managed for this user · account created {{ profile_user["created_at"] or "—" }}</p>
+  </div>
+  <div class="head-actions">
+    <a class="btn ghost" href="{{ url_for('auth.users') }}">← All users</a>
+  </div>
+</div>
+
+<div class="grid cards">
+  <div class="stat accent-red">
+    <div class="stat-top"><span class="ic red">💸</span><span class="label">Total spent</span></div>
+    <strong>{{ currency }}{{ (expense|money) }}</strong>
+  </div>
+  <div class="stat accent-green">
+    <div class="stat-top"><span class="ic green">💰</span><span class="label">Total income</span></div>
+    <strong>{{ currency }}{{ (income|money) }}</strong>
+  </div>
+  <div class="stat accent-indigo">
+    <div class="stat-top"><span class="ic indigo">🧾</span><span class="label">Transactions</span></div>
+    <strong>{{ count }}</strong>
+  </div>
+  <div class="stat accent-amber">
+    <div class="stat-top"><span class="ic amber">🏦</span><span class="label">Total saved</span></div>
+    <strong>{{ currency }}{{ (saved|money) }}</strong>
+  </div>
+</div>
+
+<div class="grid two">
+  <section class="panel">
+    <div class="panel-head">
+      <span class="pic">🏷</span>
+      <div><h2>Spending by category</h2><p>Where {{ profile_user["username"] }}'s money goes</p></div>
+    </div>
+    {% if categories %}
+    <div class="table-wrap"><table>
+      <thead><tr><th>Category</th><th class="num">Total</th></tr></thead>
+      <tbody>
+        {% for c in categories %}
+        <tr><td class="cat-name">{{ c["name"] }}</td>
+            <td class="num expense">{{ currency }}{{ (c["total"]|money) }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+    {% else %}
+    <p class="hint">No spending yet for this user.</p>
+    {% endif %}
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <span class="pic">🕘</span>
+      <div><h2>Recent</h2><p>Latest 10 entries</p></div>
+      <span class="spacer"></span>
+      <a class="btn small ghost" href="{{ url_for('transactions.index', owner=profile_user['id']) }}">View all →</a>
+    </div>
+    {% if recent %}
+    <div class="table-wrap"><table>
+      <thead><tr><th>Date</th><th>Category</th><th class="num">Amount</th></tr></thead>
+      <tbody>
+        {% for t in recent %}
+        <tr><td style="white-space:nowrap">{{ t["date"] }}</td>
+            <td class="cat-name">{{ t["category_name"] }}</td>
+            <td class="num {{ t['type'] }}">{{ '+' if t['type']=='income' else '−' }}{{ currency }}{{ (t['amount']|money) }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+    {% else %}
+    <p class="hint">Nothing managed for this user yet.</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Audit log – Expense Tracker{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <div>
+    <h1>Audit log</h1>
+    <p class="sub">Security-relevant actions (deletes, password resets, imports…) · latest 200</p>
+  </div>
+  <form method="post" action="{{ url_for('auth.audit_purge') }}"
+        onsubmit="return confirm('Purge audit entries older than {{ retention or 90 }} day(s)?')">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="row" style="align-items:end">
+      <label style="max-width:120px">Older than (days)
+        <input type="number" name="days" value="{{ retention or 90 }}" min="1" max="3650">
+      </label>
+      <button class="btn danger" type="submit">🧹 Purge old entries</button>
+    </div>
+  </form>
+</div>
+
+<section class="panel">
+  <div class="table-wrap"><table>
+    <thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Target</th><th>Details</th></tr></thead>
+    <tbody>
+    {% for e in entries %}
+      <tr>
+        <td style="white-space:nowrap">{{ e['timestamp'] or '—' }}</td>
+        <td>{{ e['actor'] or '(removed user)' }}</td>
+        <td><span class="badge expense">{{ e['action'] }}</span></td>
+        <td>{{ e['target_table'] or '' }}{% if e['target_id'] %} #{{ e['target_id'] }}{% endif %}</td>
+        <td class="note-cell">{{ e['details'] or '—' }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" class="empty"><span class="big">🧾</span>No audit entries yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <p class="hint">Entries older than AUDIT_RETENTION_DAYS (if set) are purged on startup;
+    you can also purge manually above.</p>
+</section>
+{% endblock %}

@@ -1,0 +1,337 @@
+{% extends "base.html" %}
+{% block title %}Backup & restore – Expense Tracker{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <div>
+    <h1>Backup & restore</h1>
+    <p class="sub">1 · Download a backup &nbsp;→&nbsp; 2 · Restore from a file &nbsp;→&nbsp; 3 · Or import CSVs (additive)</p>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center">
+    <span class="badge" title="Currently active database">🗄 {{ db_label }}</span>
+  </div>
+</div>
+
+<section class="panel">
+  <div class="panel-head">
+    <span class="pic">💾</span>
+    <div><h2>1 · Backup — download a copy</h2><p>Safe: downloading changes nothing. SQL dump of categories, budgets, transactions, users and recurrences — works on SQLite and PostgreSQL</p></div>
+  </div>
+  <div class="totals-bar" aria-label="Current database contents">
+    <span class="total-chip">{{ db_stats.categories }} categories</span>
+    <span class="total-chip">{{ db_stats.budgets }} budgets</span>
+    <span class="total-chip">{{ db_stats.transactions }} transactions</span>
+    <span class="total-chip">{{ db_stats.users }} users</span>
+    <span class="total-chip">{{ db_stats.recurrences }} recurring</span>
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <a class="btn primary" href="{{ url_for('data.backup') }}">⬇ Download backup (.sql)</a>
+    <a class="btn ghost small" href="{{ url_for('data.backup_json') }}" title="Legacy format for old backups">Download legacy backup (.json)</a>
+  </div>
+  <p class="hint">Tip: download a backup before importing CSVs or trying a restore, so you can always go back.</p>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span class="pic">⚠️</span>
+    <div><h2>2 · Restore — from a backup file (.sql / .json)</h2><p>Destructive: replaces <b>all</b> current data ({{ db_stats.total }} rows). Download a backup first.</p></div>
+  </div>
+  {% if is_admin %}
+  <form id="restore-form" method="post" action="{{ url_for('data.restore') }}" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="row">
+      <label style="flex:1">Backup file (.sql or .json)
+        <input id="backup-file" type="file" name="backup_file" accept=".sql,.json,application/sql,application/json" required>
+      </label>
+    </div>
+    <p class="hint" id="backup-file-meta">No file chosen. Use a file from “Download backup”.</p>
+    <div id="backup-preview" class="alert near" style="display:none" role="status"></div>
+    <div id="backup-error" class="alert over" style="display:none" role="alert"></div>
+    <div class="row" style="margin-top:12px">
+      <label style="flex:1"><input id="restore-confirm" type="checkbox" name="confirm" value="yes"> I understand restoring <b>replaces all current data</b> ({{ db_stats.total }} rows)</label>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button id="restore-btn" class="btn primary" type="submit" style="flex:1" disabled>Choose a backup file to continue</button>
+    </div>
+  </form>
+  <p class="hint">Restoring validates the file first — if anything is wrong, <b>no changes are made</b>.</p>
+  {% else %}
+  <p class="hint">View-only access — restore requires an admin account.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span class="pic">⚠️</span>
+    <div><h2>3 · Restore — from CSV files</h2><p>Destructive: replaces categories, budgets and transactions. Users are kept.</p></div>
+  </div>
+  {% if is_admin %}
+  <form id="csv-restore-form" method="post" action="{{ url_for('data.restore_csv') }}" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="row">
+      <label style="flex:1">Categories CSV
+        <input class="csv-restore-file" type="file" name="categories_file" accept=".csv">
+      </label>
+      <label style="flex:1">Budgets CSV
+        <input class="csv-restore-file" type="file" name="budgets_file" accept=".csv">
+      </label>
+      <label style="flex:1">Transactions CSV
+        <input class="csv-restore-file" type="file" name="transactions_file" accept=".csv">
+      </label>
+    </div>
+    <p class="hint" id="csv-restore-meta">No files chosen. Upload any combination — at least one file is required.</p>
+    <div id="csv-restore-error" class="alert over" style="display:none" role="alert"></div>
+    <div class="row" style="margin-top:12px">
+      <label style="flex:1"><input id="csv-restore-confirm" type="checkbox" name="confirm" value="yes"> I understand restoring <b>replaces categories, budgets and transactions</b></label>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button id="csv-restore-btn" class="btn primary" type="submit" style="flex:1" disabled>Choose at least one CSV file</button>
+    </div>
+  </form>
+  <p class="hint">Users and login accounts are always preserved. Recurring schedules are removed (CSV has no recurring format). For a complete restore — including users and schedules — use a <b>.sql backup</b> above.</p>
+  {% else %}
+  <p class="hint">View-only access — restore requires an admin account.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span class="pic">➕</span>
+    <div><h2>4 · Import — add CSV rows</h2><p>Safe & additive: adds to existing data, never deletes. All files optional — import any combination at once</p></div>
+  </div>
+  {% if is_admin %}
+  <form method="post" action="{{ url_for('data.import_data') }}" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="row">
+      <label style="flex:1">Categories CSV
+        <input type="file" name="categories_file" accept=".csv">
+      </label>
+      <label style="flex:1">Budgets CSV
+        <input type="file" name="budgets_file" accept=".csv">
+      </label>
+      <label style="flex:1">Transactions CSV
+        <input type="file" name="transactions_file" accept=".csv">
+      </label>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button class="btn primary" type="submit" style="flex:1">Import selected files</button>
+    </div>
+  </form>
+  <p class="hint">Files are processed in dependency order: categories → budgets → transactions.
+    Up to {{ 2000 }} rows per file.</p>
+  {% else %}
+  <p class="hint">View-only access — importing requires an admin account.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span class="pic">📄</span>
+    <div><h2>Expected CSV formats</h2><p>First row must be the header; UTF-8 encoding</p></div>
+  </div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>File</th><th>Columns</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="cat-name">categories.csv</td>
+        <td><code>name,type</code></td>
+        <td>type is <code>income</code> or <code>expense</code> · existing names are skipped</td>
+      </tr>
+      <tr>
+        <td class="cat-name">budgets.csv</td>
+        <td><code>category,monthly_limit</code></td>
+        <td>matched by category name (spending categories only — savings buckets are skipped) · existing budgets are updated</td>
+      </tr>
+      <tr>
+        <td class="cat-name">transactions.csv</td>
+        <td><code>date,type,category,amount,note[,owner]</code></td>
+        <td>date as YYYY-MM-DD · unknown categories are auto-created · owner must be an existing user (else attributed to you)</td>
+      </tr>
+    </tbody>
+  </table></div>
+  <p class="hint">Tip: the transactions page has its own quick
+    <a href="{{ url_for('transactions.index') }}">CSV import/export</a> for transactions only.</p>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  var fileInput = document.getElementById("backup-file");
+  var confirmBox = document.getElementById("restore-confirm");
+  var submitBtn = document.getElementById("restore-btn");
+  var meta = document.getElementById("backup-file-meta");
+  var preview = document.getElementById("backup-preview");
+  var errBox = document.getElementById("backup-error");
+  if (!fileInput || !submitBtn) return;
+  var fileValid = false;
+
+  function showError(msg) {
+    errBox.style.display = "block";
+    errBox.textContent = msg;
+  }
+  function clearError() {
+    errBox.style.display = "none";
+    errBox.textContent = "";
+  }
+  function showPreview(info) {
+    preview.style.display = "block";
+    preview.textContent = info;
+  }
+  function clearPreview() {
+    preview.style.display = "none";
+    preview.textContent = "";
+  }
+  function refreshButton() {
+    var ready = fileValid && confirmBox && confirmBox.checked;
+    submitBtn.disabled = !ready;
+    submitBtn.textContent = !fileValid ? "Choose a backup file to continue"
+      : !(confirmBox && confirmBox.checked) ? "Tick the confirmation to enable restore"
+      : "Restore from backup — replaces all data";
+  }
+  function fmtMB(bytes) { return (bytes / (1024 * 1024)).toFixed(2) + " MB"; }
+
+  fileInput.addEventListener("change", function () {
+    clearError(); clearPreview(); fileValid = false;
+    var f = fileInput.files && fileInput.files[0];
+    if (!f) {
+      meta.textContent = "No file chosen. Use a file from “Download backup”.";
+      refreshButton();
+      return;
+    }
+    meta.textContent = f.name + " (" + fmtMB(f.size) + ")";
+    var isSql = /\.sql$/i.test(f.name);
+    var isJson = /\.json$/i.test(f.name);
+    if (!isSql && !isJson) {
+      showError("“" + f.name + "” is not a .sql or .json file. Please choose a backup downloaded via “Download backup”.");
+      refreshButton();
+      return;
+    }
+    if (f.size === 0) {
+      showError("“" + f.name + "” is empty (0 bytes). Choose a non-empty backup file.");
+      refreshButton();
+      return;
+    }
+    var reader = new FileReader();
+    reader.onload = function () {
+      try {
+        if (isSql) {
+          var text = reader.result;
+          if (text.toLowerCase().indexOf("exptracker sql backup") === -1) {
+            showError("This doesn't look like an Expense Tracker SQL backup (missing header).");
+            refreshButton();
+            return;
+          }
+          var tables = ["categories", "budgets", "transactions", "users", "recurrences"];
+          var parts = [], total = 0;
+          tables.forEach(function (t) {
+            var re = new RegExp('INSERT\\s+INTO\\s+"?' + t + '"?', 'gi');
+            var n = (text.match(re) || []).length;
+            total += n;
+            if (n) parts.push(n + " " + t);
+          });
+          if (!total) {
+            showError("Backup contains no data (0 rows). Nothing would be restored.");
+            refreshButton();
+            return;
+          }
+          showPreview("Backup looks good: " + parts.join(", ") + " (" + total + " rows). Restoring will REPLACE all current data.");
+          fileValid = true;
+          refreshButton();
+          return;
+        }
+        var payload = JSON.parse(reader.result);
+        if (!payload || typeof payload !== "object" || !payload.data) {
+          showError("This file is valid JSON but not an Expense Tracker backup (missing “data”).");
+          refreshButton();
+          return;
+        }
+        if (payload.app && payload.app !== "exptracker") {
+          showError("This doesn't look like an Expense Tracker backup (app=" + payload.app + ").");
+          refreshButton();
+          return;
+        }
+        var tables = ["categories", "budgets", "transactions", "users", "recurrences"];
+        var parts = [], total = 0;
+        tables.forEach(function (t) {
+          var n = payload.data[t] ? payload.data[t].length : 0;
+          total += n;
+          if (n) parts.push(n + " " + t);
+        });
+        if (!total) {
+          showError("Backup contains no data (0 rows). Nothing would be restored.");
+          refreshButton();
+          return;
+        }
+        var when = payload.exported_at ? " · exported " + payload.exported_at : "";
+        showPreview("Backup looks good: " + parts.join(", ") + " (" + total + " rows)" + when + ". Restoring will REPLACE all current data.");
+        fileValid = true;
+      } catch (e) {
+        showError("Could not read this file as JSON (" + e.message + "). It may be corrupted — try downloading a fresh backup.");
+      }
+      refreshButton();
+    };
+    reader.onerror = function () {
+      showError("Could not read “" + f.name + "”. Please try again.");
+      refreshButton();
+    };
+    reader.readAsText(f);
+    refreshButton();
+  });
+  if (confirmBox) confirmBox.addEventListener("change", refreshButton);
+  refreshButton();
+
+  // CSV restore: enable only with >= 1 .csv file + confirmation.
+  var csvInputs = document.querySelectorAll(".csv-restore-file");
+  var csvConfirm = document.getElementById("csv-restore-confirm");
+  var csvBtn = document.getElementById("csv-restore-btn");
+  var csvMeta = document.getElementById("csv-restore-meta");
+  var csvErr = document.getElementById("csv-restore-error");
+  if (csvInputs.length && csvBtn) {
+    var csvValid = false;
+    var refreshCsv = function () {
+      var names = [];
+      csvValid = true;
+      csvInputs.forEach(function (inp) {
+        var f = inp.files && inp.files[0];
+        if (!f) return;
+        if (!/\.csv$/i.test(f.name)) {
+          csvValid = false;
+        } else if (f.size === 0) {
+          csvValid = false;
+        } else {
+          names.push(f.name);
+        }
+      });
+      var hasFile = names.length > 0;
+      if (!hasFile) {
+        csvMeta.textContent = "No files chosen. Upload any combination — at least one file is required.";
+      } else {
+        csvMeta.textContent = "Selected: " + names.join(", ");
+      }
+      var bad = false;
+      csvInputs.forEach(function (inp) {
+        var f = inp.files && inp.files[0];
+        if (f && !/\.csv$/i.test(f.name)) bad = true;
+        if (f && f.size === 0) bad = true;
+      });
+      if (bad) {
+        csvErr.style.display = "block";
+        csvErr.textContent = "Each file must be a non-empty .csv file.";
+      } else {
+        csvErr.style.display = "none";
+        csvErr.textContent = "";
+      }
+      var ready = hasFile && !bad && csvConfirm && csvConfirm.checked;
+      csvBtn.disabled = !ready;
+      csvBtn.textContent = !hasFile ? "Choose at least one CSV file"
+        : bad ? "Fix the file selection to continue"
+        : !(csvConfirm && csvConfirm.checked) ? "Tick the confirmation to enable restore"
+        : "Restore from CSV — replaces data tables";
+    };
+    csvInputs.forEach(function (inp) { inp.addEventListener("change", refreshCsv); });
+    if (csvConfirm) csvConfirm.addEventListener("change", refreshCsv);
+    refreshCsv();
+  }
+})();
+</script>
+{% endblock %}

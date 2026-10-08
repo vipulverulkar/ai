@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}Recurring – Expense Tracker{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <div>
+    <h1>Recurring transactions</h1>
+    <p class="sub">Rent, salary and subscriptions — generated automatically on schedule</p>
+  </div>
+  {% if is_admin %}
+  <form method="post" action="{{ url_for('recurring.run_now') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="btn primary" type="submit">▶ Run due now{% if due %} ({{ due }}){% endif %}</button>
+  </form>
+  {% endif %}
+</div>
+
+<div class="grid two">
+  <section class="panel">
+    <div class="panel-head">
+      <span class="pic">🔁</span>
+      <div><h2>Schedule a recurrence</h2><p>Transactions are created when due (auto-checked on dashboard load)</p></div>
+    </div>
+    {% if is_admin %}
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="row">
+        <label>Amount ({{ currency }})<input type="text" inputmode="decimal" class="amount-inr" name="amount" required placeholder="e.g. 12,000" autocomplete="off"></label>
+        <label>Currency
+          <select name="currency">
+            {% for code in currency_codes %}
+            <option value="{{ code }}" {% if code == base_currency %}selected{% endif %}>{{ code }}{% if code != base_currency %} → {{ currency }}{% endif %}</option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+      <div class="row">
+        <label>Start date<input type="date" name="start_date" value="{{ today }}" required></label>
+        <label>End date (optional)<input type="date" name="end_date" placeholder="no end"></label>
+      </div>
+      <label>Frequency
+        <select name="frequency" required>
+          {% for f in frequencies %}
+          <option value="{{ f }}" {% if f == 'monthly' %}selected{% endif %}>{{ f|capitalize }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <div class="segment" role="radiogroup" aria-label="Type">
+        <label><input type="radio" name="type" value="expense" checked> ➖ Expense</label>
+        <label><input type="radio" name="type" value="income"> ➕ Income</label>
+      </div>
+      <label>Category
+        <select name="category_id" required>
+          <option value="">— select —</option>
+          {% for c in categories %}
+          <option value="{{ c['id'] }}" data-type="{{ c['type'] }}">{{ c['name'] }} ({{ c['type'] }})</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Note<input type="text" name="note" placeholder="e.g. Rent" maxlength="200"></label>
+      <label>For (optional)
+        <select name="owner">
+          {% for u in owners %}
+          <option value="{{ u['id'] }}" {% if u['username']==username|default('') %}selected{% endif %}>{{ u['username'] }}{% if u['username']==username|default('') %} (me){% endif %}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button class="btn primary block" type="submit">Add recurrence</button>
+    </form>
+    {% else %}
+    <p class="hint">View-only access — schedules are managed by admins.</p>
+    {% endif %}
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <span class="pic">🗓️</span>
+      <div><h2>Scheduled</h2><p>{{ items|length }} recurrence(s)</p></div>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Note</th><th>Category</th><th>Frequency</th><th class="num">Amount</th><th>Starts</th><th>Next run</th><th>Ends</th><th>Status</th><th>Actions</th></tr></thead>
+      <tbody>
+      {% for r in items %}
+        {% set ended = r['end_date'] and r['next_run_date'] > r['end_date'] %}
+        <tr>
+          <td class="cat-name">{{ r['note'] or '—' }}</td>
+          <td>{{ r['category_name'] or '(deleted)' }}</td>
+          <td><span class="badge {{ r['type'] }}">{{ r['frequency']|capitalize }}</span></td>
+          <td class="num {{ r['type'] }}">{{ '+' if r['type']=='income' else '−' }}{{ currency }}{{ (r['amount']|money) }}</td>
+          <td style="white-space:nowrap">{{ r['start_date'] or '—' }}</td>
+          <td style="white-space:nowrap">{{ r['next_run_date'] }}</td>
+          <td style="white-space:nowrap">{{ r['end_date'] or '∞' }}</td>
+          <td>{% if ended %}<span class="usage-pill">ended</span>{% elif r['active'] %}<span class="count-pill">active</span>{% else %}<span class="usage-pill">paused</span>{% endif %}</td>
+          <td class="actions">
+            {% if not ended %}
+            {% if r['active'] %}
+            <form method="post" action="{{ url_for('recurring.pause', rec_id=r['id']) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn small" type="submit">Pause</button>
+            </form>
+            {% else %}
+            <form method="post" action="{{ url_for('recurring.resume', rec_id=r['id']) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn small" type="submit">Resume</button>
+            </form>
+            {% endif %}
+            {% endif %}
+            <form method="post" action="{{ url_for('recurring.delete', rec_id=r['id']) }}"
+                  onsubmit="return confirm('Delete this recurrence? Generated transactions are kept.')">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn small danger" type="submit">Delete</button>
+            </form>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="9" class="empty"><span class="big">🔁</span>No recurring transactions yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    <p class="hint">Due recurrences are processed automatically when the dashboard loads
+      (and via “Run due now”). Catch-up is capped: a schedule abandoned for over a year is paused.</p>
+  </section>
+</div>
+{% endblock %}

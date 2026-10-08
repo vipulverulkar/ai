@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Expense Tracker — sign in to your account.">
+  <meta name="theme-color" content="#1e1b4b">
+  <title>Sign in – Expense Tracker</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💰</text></svg>">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script>
+    try {
+      var t = localStorage.getItem('exp-theme');
+      if (t) document.documentElement.setAttribute('data-theme', t);
+      else if (matchMedia('(prefers-color-scheme: dark)').matches)
+        document.documentElement.setAttribute('data-theme', 'dark');
+    } catch (e) {}
+  </script>
+</head>
+<body class="auth-body">
+<div class="toast-wrap" aria-live="polite">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for cat, msg in messages %}
+        <div class="flash {{ cat }}" role="alert" title="Click to dismiss">
+          <span class="fi">{% if cat == 'success' %}✓{% else %}!{% endif %}</span><span>{{ msg }}</span>
+        </div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+</div>
+<main class="auth-main">
+  <div class="auth-shell">
+    <aside class="auth-brand">
+      <span class="auth-orb o1" aria-hidden="true"></span>
+      <span class="auth-orb o2" aria-hidden="true"></span>
+      <span class="auth-orb o3" aria-hidden="true"></span>
+      <div class="auth-brand-top">
+        <span class="logo logo-glow">₹</span>
+        <strong>Expense Tracker</strong>
+      </div>
+      <h1>Every rupee,<br>tracked.</h1>
+      <p class="auth-tag">Income, expenses, budgets and reports — in one calm, fast dashboard.</p>
+      <ul class="auth-points">
+        <li><span>✓</span> Live dashboard &amp; budget alerts</li>
+        <li><span>✓</span> Reports, trends &amp; CSV import/export</li>
+        <li><span>✓</span> One-click backup &amp; restore</li>
+        <li><span>✓</span> SQLite or PostgreSQL backend</li>
+      </ul>
+      <div class="auth-brand-foot">
+        <span class="auth-ver">v{{ app_version }}</span>
+        <span>Python · Flask · SQLite / PostgreSQL</span>
+      </div>
+    </aside>
+    <section class="auth-form" aria-label="Sign in">
+      <div class="auth-form-head">
+        <span class="logo">₹</span>
+        <h2>Welcome back</h2>
+        <p>Sign in to continue to your workspace.</p>
+      </div>
+      <form method="post" autocomplete="on">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label class="field">
+          <span class="field-label">Username</span>
+          <span class="field-wrap">
+            <span class="field-icon">👤</span>
+            <input type="text" name="username" required autofocus
+                   autocomplete="username" placeholder="e.g. admin">
+          </span>
+        </label>
+        <label class="field">
+          <span class="field-label">Password</span>
+          <span class="field-wrap">
+            <span class="field-icon">🔒</span>
+            <input type="password" name="password" id="auth-password" required
+                   autocomplete="current-password" placeholder="Enter your password">
+            <button type="button" class="field-toggle" id="auth-toggle"
+                    aria-label="Show password" title="Show password">👁</button>
+          </span>
+          <span class="caps-hint" id="caps-hint" role="status">⚠ Caps Lock is on</span>
+        </label>
+        <button class="btn primary block auth-submit" type="submit"><span>Sign in →</span></button>
+      </form>
+      <button type="button" class="auth-demo" id="auth-demo">Just exploring? Fill demo credentials</button>
+      <p class="hint auth-note">Default credentials are <code>admin</code> / <code>admin</code>
+        (stored in the <code>users</code> table) — change the password there before deploying.</p>
+      <p class="auth-secure">🔐 Cookie-based sessions · always serve over HTTPS in production.</p>
+    </section>
+  </div>
+  <footer class="footer auth-footer"><b>Expense Tracker</b> v{{ app_version }} · built with Python, Flask, SQLite &amp; PostgreSQL</footer>
+</main>
+<script>
+  (function () {
+    var btn = document.getElementById('auth-toggle');
+    var input = document.getElementById('auth-password');
+    if (btn && input) btn.addEventListener('click', function () {
+      var show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      btn.textContent = show ? '🙈' : '👁';
+      btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+      btn.title = show ? 'Hide password' : 'Show password';
+      input.focus();
+    });
+    // Caps Lock warning (only where the API exists).
+    var caps = document.getElementById('caps-hint');
+    if (caps && input && input.addEventListener) {
+      var checkCaps = function (e) {
+        var on = false;
+        try { on = !!(e && e.getModifierState && e.getModifierState('CapsLock')); } catch (err) {}
+        caps.classList.toggle('on', on);
+      };
+      input.addEventListener('keyup', checkCaps);
+      input.addEventListener('blur', function () { caps.classList.remove('on'); });
+    }
+    // One-click demo credentials.
+    var demo = document.getElementById('auth-demo');
+    if (demo) demo.addEventListener('click', function () {
+      var user = document.querySelector('input[name="username"]');
+      if (user) user.value = 'admin';
+      if (input) { input.value = 'admin'; input.focus(); }
+    });
+  })();
+</script>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

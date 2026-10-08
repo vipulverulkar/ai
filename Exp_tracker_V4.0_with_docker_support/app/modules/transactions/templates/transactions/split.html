@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Split – Expense Tracker{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <div>
+    <h1>✂ Split transaction</h1>
+    <p class="sub">Group {{ group }} · {{ rows|length }} line(s) · total {{ currency }}{{ (total|money) }}</p>
+  </div>
+  <div class="head-actions">
+    {% if is_admin %}
+    <form method="post" action="{{ url_for('transactions.split_delete', group=group) }}"
+          onsubmit="return confirm('Move all lines of this split to trash?')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn danger" type="submit">🗑 Delete whole split</button>
+    </form>
+    {% endif %}
+    <a class="btn ghost" href="{{ url_for('transactions.index') }}">← Transactions</a>
+  </div>
+</div>
+
+<section class="panel">
+  <div class="table-wrap"><table>
+    <thead><tr><th>Date</th><th>Category</th><th>For</th><th>Note</th><th class="num">Amount</th><th>Actions</th></tr></thead>
+    <tbody>
+    {% for t in rows %}
+      <tr>
+        <td style="white-space:nowrap">{{ t['date'] }}</td>
+        <td class="cat-name">{{ t['category_name'] }}</td>
+        <td>{% if t['owner_name'] %}{{ t['owner_name'] }}{% else %}<span style="color:var(--muted)">—</span>{% endif %}</td>
+        <td class="note-cell">{{ t['note'] or '—' }}</td>
+        <td class="num {{ t['type'] }}">{{ currency }}{{ (t['amount']|money) }}</td>
+        <td class="actions">
+          {% if is_admin %}
+          <a class="btn small" href="{{ url_for('transactions.edit', tx_id=t['id']) }}">Edit</a>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <p class="hint">Each line is a standalone transaction — edits and reports treat them
+    individually, while the shared group ties them back to the same receipt.</p>
+</section>
+{% endblock %}

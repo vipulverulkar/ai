@@ -1,0 +1,59 @@
+-- Expense Tracker database schema (SQLite)
+-- Creates the same tables as init_db() in app/db.py.
+-- Usage: sqlite3 expenses.db < expenses.sql
+
+PRAGMA foreign_keys = ON;
+
+CREATE TABLE IF NOT EXISTS categories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE NOT NULL,
+    type TEXT NOT NULL CHECK (type IN ('income','expense'))
+);
+
+-- Login credentials (hashed). init_db seeds admin/admin when empty.
+-- session_timeout_minutes is a per-user idle-timeout override in minutes
+-- (NULL = use the SESSION_TIMEOUT_MINUTES default).
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    session_timeout_minutes INTEGER,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS transactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    amount REAL NOT NULL CHECK (amount > 0),
+    type TEXT NOT NULL CHECK (type IN ('income','expense')),
+    category_id INTEGER NOT NULL,
+    date TEXT NOT NULL,
+    note TEXT DEFAULT '',
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE RESTRICT
+);
+
+CREATE TABLE IF NOT EXISTS budgets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    category_id INTEGER UNIQUE NOT NULL,
+    monthly_limit REAL NOT NULL CHECK (monthly_limit > 0),
+    FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_tx_date ON transactions(date);
+CREATE INDEX IF NOT EXISTS idx_tx_cat ON transactions(category_id);
+CREATE INDEX IF NOT EXISTS idx_tx_type ON transactions(type);
+CREATE INDEX IF NOT EXISTS idx_tx_user ON transactions(user_id);
+
+-- Default categories (same as DEFAULT_CATEGORIES in app/config.py)
+INSERT OR IGNORE INTO categories (name, type) VALUES
+    ('Salary', 'income'),
+    ('Freelance', 'income'),
+    ('Investment', 'income'),
+    ('Food', 'expense'),
+    ('Transport', 'expense'),
+    ('Shopping', 'expense'),
+    ('Bills', 'expense'),
+    ('Entertainment', 'expense'),
+    ('Health', 'expense'),
+    ('Other', 'expense');

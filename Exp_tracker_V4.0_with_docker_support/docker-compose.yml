@@ -1,0 +1,49 @@
+services:
+  exptracker:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      - EXPENSE_DB=/data/expenses.db
+      - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
+      - CURRENCY_SYMBOL=${CURRENCY_SYMBOL:-₹}
+      # Database backend: sqlite (default) or postgres. To use PostgreSQL
+      # instead, set DB_TYPE=postgres + DATABASE_URL (and enable the db
+      # service below):
+      - DB_TYPE=${DB_TYPE:-sqlite}
+      # - DB_TYPE=postgres
+      # - DATABASE_URL=postgresql://exptracker:exptracker@db:5432/exptracker
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      # Named volume: database survives `docker compose down`,
+      # rebuilds and image updates. Manage with:
+      #   docker volume inspect exptracker_exptracker-data
+      #   docker compose down -v   # DANGER: deletes all data
+      # To store the DB on the host instead, replace with a bind mount:
+      #   - ./data:/data
+      - exptracker-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/healthz', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  exptracker-data:
+
+# Optional PostgreSQL backend — enable together with DB_TYPE=postgres and
+# DATABASE_URL above:
+#   db:
+#     image: postgres:16-alpine
+#     environment:
+#       - POSTGRES_USER=exptracker
+#       - POSTGRES_PASSWORD=exptracker
+#       - POSTGRES_DB=exptracker
+#     volumes:
+#       - exptracker-pg:/var/lib/postgresql/data
+#     restart: unless-stopped
+# and add a second volume:  exptracker-pg:

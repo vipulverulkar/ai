@@ -240,12 +240,12 @@ def filter_query(db, f_type, f_category, f_owner, f_month, f_search, sort, order
 
 # ---------- CRUD ----------
 def create(db, amount_cents, ttype, category_id, date_str, note, user_id=None,
-           currency=None, orig_amount=None, split_group=None):
+           currency=None, orig_amount=None, split_group=None, receipt_path=None):
     db.execute(
         "INSERT INTO transactions (amount, type, category_id, date, note,"
-        " user_id, currency, orig_amount, split_group) VALUES (?,?,?,?,?,?,?,?,?)",
+        " user_id, currency, orig_amount, split_group, receipt_path) VALUES (?,?,?,?,?,?,?,?,?,?)",
         (amount_cents, ttype, category_id, date_str, note, user_id,
-         currency or base_currency(), orig_amount, split_group),
+         currency or base_currency(), orig_amount, split_group, receipt_path),
     )
     db.commit()
 
@@ -262,12 +262,12 @@ def get(db, tx_id):
 
 
 def update(db, tx_id, amount_cents, ttype, category_id, date_str, note,
-           user_id=None, currency=None, orig_amount=None):
+           user_id=None, currency=None, orig_amount=None, receipt_path=None):
     db.execute(
         "UPDATE transactions SET amount=?, type=?, category_id=?, date=?,"
-        " note=?, user_id=?, currency=?, orig_amount=? WHERE id=?",
+        " note=?, user_id=?, currency=?, orig_amount=?, receipt_path=? WHERE id=?",
         (amount_cents, ttype, category_id, date_str, note, user_id,
-         currency or base_currency(), orig_amount, tx_id),
+         currency or base_currency(), orig_amount, receipt_path, tx_id),
     )
     db.commit()
 
@@ -452,7 +452,7 @@ def export_rows(db, where, args, order_sql):
 
 def import_csv(db, text, user_id=None):
     """Import CSV text — required columns date,type,category,amount; optional note,owner,currency.
-
+    
     Unknown categories are auto-created. The optional owner column names the
     user the expense is managed for; unknown or blank owners fall back to
     user_id (the importer). Optional currency: when set (and not the base
@@ -492,9 +492,9 @@ def import_csv(db, text, user_id=None):
             owner_id = users.get((row.get("owner") or "").strip().lower(), user_id)
             db.execute(
                 "INSERT INTO transactions (amount,type,category_id,date,note,"
-                "user_id,currency,orig_amount) VALUES (?,?,?,?,?,?,?,?)",
+                "user_id,currency,orig_amount,receipt_path) VALUES (?,?,?,?,?,?,?,?,?)",
                 (amount, ttype, cat["id"], date_str, note, owner_id,
-                 code, orig if code != base_currency() else None))
+                 code, orig if code != base_currency() else None, row.get("receipt")))
             db.commit()
             inserted += 1
         except (ValueError, KeyError) + DB_ERRORS:

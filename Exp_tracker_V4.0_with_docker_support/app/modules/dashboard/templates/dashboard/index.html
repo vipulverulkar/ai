@@ -62,7 +62,7 @@
       <div><h2>Add Transaction</h2><p>Log income or spending in seconds</p></div>
     </div>
     {% if is_admin %}
-    <form id="add-form" method="post" action="{{ url_for('transactions.add') }}">
+    <form id="add-form" method="post" action="{{ url_for('transactions.add') }}" enctype="multipart/form-data">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="row">
         <label>Amount ({{ currency }})<input type="text" inputmode="decimal" class="amount-inr" name="amount" required placeholder="e.g. 1,00,000.00" autocomplete="off"></label>
@@ -89,8 +89,11 @@
           {% endfor %}
         </select>
       </label>
-      <label>Note<input type="text" name="note" placeholder="e.g. lunch, salary…" maxlength="200"></label>
-      <label>For (optional)
+       <label>Note<input type="text" name="note" placeholder="e.g. lunch, salary…" maxlength="200"></label>
+       <label>Receipt
+         <input type="file" name="receipt" accept="image/*,application/pdf">
+       </label>
+       <label>For (optional)
         <select name="owner">
           {% for u in owners %}
           <option value="{{ u['id'] }}" {% if u['username']==username %}selected{% endif %}>{{ u['username'] }}{% if u['username']==username %} (me){% endif %}</option>

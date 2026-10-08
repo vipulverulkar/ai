@@ -1,7 +1,7 @@
 """Report routes (Controller layer)."""
 import io
+import pandas as pd
 from datetime import date
-
 from flask import Response, flash, redirect, render_template, request, send_file, url_for
 
 from ...db import get_db
@@ -79,6 +79,52 @@ def _forecast(db):
     data = models.forecast(db)
     return render_template("reports/reports.html", view="forecast",
                            forecast=data, period_label="next 3 months")
+
+
+@bp.route("/reports/export-xlsx")
+def export_xlsx():
+    """Export the current report view as an Excel file."""
+    db = get_db()
+    today = date.today()
+    view = request.args.get("view", "daily")
+    
+    if view == "monthly":
+        try:
+            year = int(request.args.get("year", str(today.year)))
+        except ValueError:
+            year = today.year
+        rows = models.monthly(db, year)
+        period = f"Year {year}"
+        df = pd.DataFrame(rows)
+        cat_rows = models.category_totals_for_year(db, year)
+        df_cats = pd.DataFrame(cat_rows)
+    elif view == "budgets":
+        month_str = request.args.get("month", today.strftime("%Y-%m"))
+        y, m = parse_month(month_str)
+        rows = models.budget_variance(db, y, m)
+        period = f"Budget Variance {month_str}"
+        df = pd.DataFrame(rows)
+        df_cats = pd.DataFrame()
+    else: # daily
+        month_str = request.args.get("month", today.strftime("%Y-%m"))
+        y, m = parse_month(month_str)
+        rows = models.daily(db, y, m)
+        period = f"Month {month_str}"
+        df = pd.DataFrame(rows)
+        cat_rows = models.category_totals_for_month(db, y, m)
+        df_cats = pd.DataFrame(cat_rows)
+
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine='openpyxl') as writer:
+        df.to_excel(writer, sheet_name='Summary', index=False)
+        if not df_cats.empty:
+            df_cats.to_excel(writer, sheet_name='Categories', index=False)
+    
+    buf.seek(0)
+    stamp = today.strftime("%Y%m%d")
+    return send_file(buf, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
+                     as_attachment=True, download_name=f"exptracker-report-{stamp}.xlsx")
+
 
 
 @bp.route("/reports/export-pdf")

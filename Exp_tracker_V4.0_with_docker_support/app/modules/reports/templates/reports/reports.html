@@ -14,6 +14,7 @@
     <a class="btn {% if view=='budgets' %}primary{% else %}ghost{% endif %}" href="{{ url_for('reports.index', view='budgets', month=month if month is defined else '') }}">🎯 Budgets</a>
     <a class="btn {% if view=='forecast' %}primary{% else %}ghost{% endif %}" href="{{ url_for('reports.index', view='forecast') }}">🔮 Forecast</a>
     <a class="btn ghost" href="{{ url_for('reports.export_pdf', view=view if view in ('daily','monthly') else 'daily', month=month if (view=='daily' and month is defined) else '', year=year if (view=='monthly' and year is defined) else '') }}">⬇ PDF</a>
+    <a class="btn ghost" href="{{ url_for('reports.export_xlsx', view=view if view in ('daily','monthly') else 'daily', month=month if (view=='daily' and month is defined) else '', year=year if (view=='monthly' and year is defined) else '') }}">⬇ Excel</a>
     <a class="btn ghost" href="{{ url_for('transactions.export') }}">⬇ CSV</a>
   </div>
 </div>

@@ -28,6 +28,12 @@ CREATE TABLE IF NOT EXISTS categories (
     type TEXT NOT NULL CHECK (type IN ('income','expense')),
     is_savings INTEGER NOT NULL DEFAULT 0 CHECK (is_savings IN (0,1))
 );
+CREATE TABLE IF NOT EXISTS import_templates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE NOT NULL,
+    mapping TEXT NOT NULL,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT UNIQUE NOT NULL,
@@ -97,6 +103,12 @@ CREATE TABLE IF NOT EXISTS categories (
     name TEXT UNIQUE NOT NULL,
     type TEXT NOT NULL CHECK (type IN ('income','expense')),
     is_savings INTEGER NOT NULL DEFAULT 0 CHECK (is_savings IN (0,1))
+);
+CREATE TABLE IF NOT EXISTS import_templates (
+    id SERIAL PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL,
+    mapping TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT now()
 );
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
@@ -538,6 +550,7 @@ def _migrate(conn):
         ("transactions", "currency", "TEXT DEFAULT 'INR'"),
         ("transactions", "orig_amount", "INTEGER"),
         ("transactions", "split_group", "TEXT"),
+        ("transactions", "receipt_path", "TEXT"),
         ("users", "role", "TEXT DEFAULT 'admin'"),
         ("users", "totp_secret", "TEXT"),
         ("users", "totp_enabled", "INTEGER DEFAULT 0"),

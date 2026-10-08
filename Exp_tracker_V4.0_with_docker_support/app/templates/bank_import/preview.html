@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Import Preview – Expense Tracker{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Import Preview</h1>
+    <p class="sub">Review how your bank data will be imported</p>
+  </div>
+</div>
+
+<section class="panel">
+  <div class="panel-head">
+    <span class="pic">👁️</span>
+    <div><h2>Preview (First 5 rows)</h2><p>Verify the mapping before importing</p></div>
+  </div>
+  
+  {% if preview_rows %}
+  <div class="table-wrap"><table>
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Type</th>
+        <th>Category</th>
+        <th class="num">Amount</th>
+        <th>Note</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for row in preview_rows %}
+      <tr>
+        <td>{{ row.date }}</td>
+        <td><span class="badge {{ row.type }}">{{ row.type }}</span></td>
+        <td>{{ row.category }}</td>
+        <td class="num {{ row.type }}">{{ currency }}{{ row.amount }}</td>
+        <td><span style="color:var(--muted);font-size:12px">{{ row.note or '-' }}</span></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  
+  {% if skipped %}
+  <div class="alert near" style="margin-top:12px">
+    <strong>⚠️ Some rows had issues:</strong><br>
+    {% for s in skipped %}
+      {{ s }}<br>
+    {% endfor %}
+  </div>
+  {% endif %}
+  <form method="post" action="{{ url_for('bank_import.import_bank') }}" enctype="multipart/form-data" style="margin-top:20px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    
+    <input type="hidden" name="template_id" value="{{ template_id }}">
+    {% for key, val in mapping.items() %}
+    <input type="hidden" name="map_{{ key }}" value="{{ val }}">
+    {% endfor %}
+    
+    <!-- Re-upload the file -->
+    <label>Re-upload the same CSV file to confirm import
+      <input type="file" name="file" accept=".csv" required>
+    </label>
+    
+    <div class="row" style="margin-top:16px">
+      <button class="btn primary" type="submit" style="flex:1"> Confirm Import</button>
+      <a class="btn ghost" href="{{ url_for('bank_import.index') }}"> Back to Mapping</a>
+    </div>
+  </form>
+  
+  {% else %}
+  <div class="chart-empty">
+    <span class="big">📭</span>
+    <p>No preview data available. Please go back and upload a valid CSV file.</p>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

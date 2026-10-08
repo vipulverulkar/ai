@@ -1,10 +1,12 @@
 """Transaction routes (Controller layer)."""
+import os
 import calendar
 import csv
 import io
 from datetime import date, datetime
+from werkzeug.utils import secure_filename
 
-from flask import Response, flash, g, redirect, render_template, request, session, url_for
+from flask import Response, flash, g, redirect, render_template, request, session, url_for, current_app
 
 from ...db import get_db, log_action
 from ..auth import models as auth_models
@@ -212,6 +214,16 @@ def add():
         flash(serr, "error")
         return redirect(url_for("dashboard.index"))
 
+    receipt_file = request.files.get("receipt")
+    receipt_path = None
+    if receipt_file and receipt_file.filename != "":
+        filename = secure_filename(receipt_file.filename)
+        # Store in app/static/receipts/
+        rel_path = os.path.join("static", "receipts", filename)
+        abs_path = os.path.join(current_app.root_path, rel_path)
+        receipt_file.save(abs_path)
+        receipt_path = rel_path
+
     if lines:
         group = models.new_split_group()
         remainder = amount - sum(a for _, a in lines)
@@ -219,11 +231,11 @@ def add():
         for cat_id, line_amount in all_lines:
             models.create(db, line_amount, ttype, cat_id, date_str, note,
                           owner_id, currency=code, orig_amount=orig,
-                          split_group=group)
+                          split_group=group, receipt_path=receipt_path)
         flash(f"Transaction added, split across {len(all_lines)} categories.", "success")
     else:
         models.create(db, amount, ttype, cat["id"], date_str, note, owner_id,
-                      currency=code, orig_amount=orig)
+                      currency=code, orig_amount=orig, receipt_path=receipt_path)
         flash("Transaction added.", "success")
     return redirect(url_for("dashboard.index"))
 
@@ -255,8 +267,18 @@ def edit(tx_id):
         if cerr:
             flash(cerr, "error")
             return redirect(url_for("transactions.edit", tx_id=tx_id))
+
+        receipt_file = request.files.get("receipt")
+        receipt_path = tx["receipt_path"]
+        if receipt_file and receipt_file.filename != "":
+            filename = secure_filename(receipt_file.filename)
+            rel_path = os.path.join("static", "receipts", filename)
+            abs_path = os.path.join(current_app.root_path, rel_path)
+            receipt_file.save(abs_path)
+            receipt_path = rel_path
+
         models.update(db, tx_id, base, ttype, cat["id"], date_str, note,
-                      owner_id, currency=code, orig_amount=orig)
+                      owner_id, currency=code, orig_amount=orig, receipt_path=receipt_path)
         flash("Transaction updated.", "success")
         return redirect(url_for("transactions.index"))
     return render_template("transactions/edit.html", tx=tx,

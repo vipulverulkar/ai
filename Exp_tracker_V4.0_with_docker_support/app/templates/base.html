@@ -32,6 +32,7 @@
       <div class="links">
         <a href="{{ url_for('dashboard.index') }}" class="{% if request.blueprint == 'dashboard' %}active{% endif %}">Dashboard</a>
         <a href="{{ url_for('transactions.index') }}" class="{% if request.blueprint == 'transactions' %}active{% endif %}">Transactions</a>
+        <a href="{{ url_for('bank_import.index') }}" class="{% if request.blueprint == 'bank_import' %}active{% endif %}">Bank Import</a>
         <a href="{{ url_for('recurring.index') }}" class="{% if request.blueprint == 'recurring' %}active{% endif %}">Recurring</a>
         <a href="{{ url_for('reports.index') }}" class="{% if request.blueprint == 'reports' %}active{% endif %}">Reports</a>
         <a href="{{ url_for('budgets.index') }}" class="{% if request.blueprint == 'budgets' %}active{% endif %}">Budgets</a>

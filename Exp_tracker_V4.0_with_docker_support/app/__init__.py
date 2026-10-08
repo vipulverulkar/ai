@@ -275,7 +275,8 @@ def _register_blueprints(app):
     from .modules.recurring import bp as recurring_bp
     from .modules.reports import bp as reports_bp
     from .modules.transactions import bp as transactions_bp
-
+    from .modules.bank_import import bp as bank_import_bp
+    
     for bp in (auth_bp, dashboard_bp, transactions_bp, categories_bp,
-               budgets_bp, reports_bp, data_bp, api_bp, api_v1_bp, recurring_bp):
+               budgets_bp, reports_bp, data_bp, api_bp, api_v1_bp, recurring_bp, bank_import_bp):
         app.register_blueprint(bp)

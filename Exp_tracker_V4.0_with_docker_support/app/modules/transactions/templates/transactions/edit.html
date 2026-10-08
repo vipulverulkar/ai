@@ -6,7 +6,7 @@
     <span class="pic">✏️</span>
     <div><h2>Edit Transaction #{{ tx['id'] }}</h2><p>Update any field and save</p></div>
   </div>
-  <form id="edit-form" method="post">
+  <form id="edit-form" method="post" enctype="multipart/form-data">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     {% if tx['split_group'] %}
     <p class="hint">✂ This row is part of a split transaction — editing changes only this line.</p>
@@ -39,6 +39,12 @@
     </label>
     <label>Date<input type="date" name="date" value="{{ tx['date'] }}" required></label>
     <label>Note<input type="text" name="note" value="{{ tx['note'] or '' }}" maxlength="200"></label>
+    <label>Receipt
+      <input type="file" name="receipt" accept="image/*,application/pdf">
+      {% if tx['receipt_path'] %}
+      <a href="{{ url_for('static', filename=tx['receipt_path'][8:]) }}" target="_blank" style="font-size:0.8em; margin-left:8px">View current ↗</a>
+      {% endif %}
+    </label>
     <label>For
       <select name="owner">
         {% for u in owners %}

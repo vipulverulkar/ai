@@ -5,7 +5,7 @@
 <div class="page-head">
   <div>
     <h1>Audit log</h1>
-    <p class="sub">Security-relevant actions (deletes, password resets, imports…) · {{ total }} entries</p>
+    <p class="sub">Security-relevant actions (deletes, password resets, imports…) · {{ total }} entries · under <a href="{{ url_for('data.index') }}">Data</a></p>
   </div>
   <form method="post" action="{{ url_for('auth.audit_purge') }}"
         onsubmit="return confirm('Purge audit entries older than {{ retention or 90 }} day(s)?')">

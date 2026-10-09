@@ -107,7 +107,7 @@ def validate(db, amount_raw, ttype, category_id, date_str, note):
     return amount, cat, date_str, note, None
 
 
-def parse_splits(db, form, ttype, total_cents):
+def parse_splits(db, form, ttype, total_cents, currency_code=None):
     """Validate optional split lines from the add form.
 
     Each line is `split_category_N` + `split_amount_N` (N in 2..MAX+1).
@@ -115,9 +115,15 @@ def parse_splits(db, form, ttype, total_cents):
     must be strictly less than the main amount — the remainder stays on the
     main category. Splits apply when at least one extra line is filled.
 
-    Returns (lines_or_None, error_msg) where lines is a list of
+    Amounts are entered in the same currency as the main amount, so they
+    are converted to base-currency cents with the same rate. Returns
+    (lines_or_None, error_msg) where lines is a list of
     (category_id, base_cents) — None when no split was requested.
     """
+    try:
+        rate = rate_to_base(currency_code or base_currency())
+    except RuntimeError:
+        rate = 1.0
     lines = []
     for n in range(2, MAX_SPLIT_LINES + 2):
         cat_raw = (form.get(f"split_category_{n}") or "").strip()
@@ -135,6 +141,9 @@ def parse_splits(db, form, ttype, total_cents):
         if cat["type"] != ttype:
             return None, f"Split category '{cat['name']}' is for {cat['type']}, not {ttype}."
         amount = to_cents(amt_raw)
+        if amount <= 0:
+            return None, "Split amounts must be positive numbers."
+        amount = int(round(amount * rate))
         if amount <= 0:
             return None, "Split amounts must be positive numbers."
         lines.append((cat["id"], amount))
@@ -475,6 +484,8 @@ def import_csv(db, text, user_id=None):
             amount_raw = (row.get("amount") or "").strip()
             note = (row.get("note") or "").strip()[:200]
             datetime.strptime(date_str, "%Y-%m-%d")
+            if date_str > date.today().isoformat():
+                raise ValueError
             code = (row.get("currency") or "").strip().upper() or base_currency()
             if code != base_currency() and code not in current_app.config.get("CURRENCY_RATES", {}):
                 raise ValueError
@@ -490,11 +501,12 @@ def import_csv(db, text, user_id=None):
             if cat["type"] != ttype:
                 raise ValueError
             owner_id = users.get((row.get("owner") or "").strip().lower(), user_id)
+            # NB: CSV has no receipt format — never trust a `receipt` column.
             db.execute(
                 "INSERT INTO transactions (amount,type,category_id,date,note,"
                 "user_id,currency,orig_amount,receipt_path) VALUES (?,?,?,?,?,?,?,?,?)",
                 (amount, ttype, cat["id"], date_str, note, owner_id,
-                 code, orig if code != base_currency() else None, row.get("receipt")))
+                 code, orig if code != base_currency() else None, None))
             db.commit()
             inserted += 1
         except (ValueError, KeyError) + DB_ERRORS:

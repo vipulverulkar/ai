@@ -31,16 +31,38 @@
       {% endif %}
       <div class="links">
         <a href="{{ url_for('dashboard.index') }}" class="{% if request.blueprint == 'dashboard' %}active{% endif %}">Dashboard</a>
-        <a href="{{ url_for('transactions.index') }}" class="{% if request.blueprint == 'transactions' %}active{% endif %}">Transactions</a>
-        <a href="{{ url_for('bank_import.index') }}" class="{% if request.blueprint == 'bank_import' %}active{% endif %}">Bank Import</a>
-        <a href="{{ url_for('recurring.index') }}" class="{% if request.blueprint == 'recurring' %}active{% endif %}">Recurring</a>
+        <div class="drop">
+          <a href="{{ url_for('transactions.index') }}" aria-haspopup="true" aria-expanded="false" class="{% if request.blueprint in ('transactions', 'recurring', 'budgets') %}active{% endif %}">Transactions <span class="caret">▾</span></a>
+          <div class="menu" role="menu">
+            <div class="menu-inner">
+            <a href="{{ url_for('transactions.index') }}" class="{% if request.blueprint == 'transactions' %}active{% endif %}">🧾 All transactions</a>
+            <a href="{{ url_for('recurring.index') }}" class="{% if request.blueprint == 'recurring' %}active{% endif %}">🔁 Recurring</a>
+            <a href="{{ url_for('budgets.index') }}" class="{% if request.blueprint == 'budgets' %}active{% endif %}">🎯 Budgets</a>
+            </div>
+          </div>
+        </div>
         <a href="{{ url_for('reports.index') }}" class="{% if request.blueprint == 'reports' %}active{% endif %}">Reports</a>
-        <a href="{{ url_for('budgets.index') }}" class="{% if request.blueprint == 'budgets' %}active{% endif %}">Budgets</a>
-        <a href="{{ url_for('categories.index') }}" class="{% if request.blueprint == 'categories' %}active{% endif %}">Categories</a>
-        <a href="{{ url_for('data.index') }}" class="{% if request.blueprint == 'data' %}active{% endif %}">Data</a>
-        <a href="{{ url_for('auth.profile') }}" class="{% if request.endpoint == 'auth.profile' %}active{% endif %}">Profile</a>
-        <a href="{{ url_for('auth.users') }}" class="{% if request.endpoint in ('auth.users', 'auth.user_profile', 'auth.reset_password', 'auth.delete_user', 'auth.audit') %}active{% endif %}">Users</a>
-        {% if is_admin %}<a href="{{ url_for('auth.audit') }}" class="{% if request.endpoint == 'auth.audit' %}active{% endif %}">Audit</a>{% endif %}
+        <div class="drop">
+          <a href="{{ url_for('categories.index') }}" aria-haspopup="true" aria-expanded="false" class="{% if request.blueprint == 'categories' or request.endpoint in ('auth.users', 'auth.user_profile', 'auth.reset_password', 'auth.delete_user', 'auth.profile') %}active{% endif %}">Master Data <span class="caret">▾</span></a>
+          <div class="menu" role="menu">
+            <div class="menu-inner">
+            <a href="{{ url_for('categories.index') }}" class="{% if request.blueprint == 'categories' %}active{% endif %}">🏷️ Categories</a>
+            {% if is_admin %}<a href="{{ url_for('auth.users') }}" class="{% if request.endpoint in ('auth.users', 'auth.user_profile', 'auth.reset_password', 'auth.delete_user') %}active{% endif %}">👥 Users</a>{% endif %}
+            {% if is_admin %}<a href="{{ url_for('auth.users') }}#add-user">➕ Add user</a>{% endif %}
+            <a href="{{ url_for('auth.profile') }}" class="{% if request.endpoint == 'auth.profile' %}active{% endif %}">👤 Profile</a>
+            </div>
+          </div>
+        </div>
+        <div class="drop">
+          <a href="{{ url_for('data.index') }}" aria-haspopup="true" aria-expanded="false" class="{% if request.blueprint in ('data', 'bank_import') or request.endpoint == 'auth.audit' %}active{% endif %}">Data <span class="caret">▾</span></a>
+          <div class="menu" role="menu">
+            <div class="menu-inner">
+            <a href="{{ url_for('data.index') }}" class="{% if request.blueprint == 'data' %}active{% endif %}">💾 Backup &amp; restore</a>
+            <a href="{{ url_for('bank_import.index') }}" class="{% if request.blueprint == 'bank_import' %}active{% endif %}">🏦 Bank import</a>
+            {% if is_admin %}<a href="{{ url_for('auth.audit') }}" class="{% if request.endpoint == 'auth.audit' %}active{% endif %}">🧾 Audit log</a>{% endif %}
+            </div>
+          </div>
+        </div>
         <a href="{{ url_for('auth.logout') }}">Logout</a>
       </div>
       <button class="theme-btn" id="theme-toggle" aria-label="Toggle dark mode">🌙</button>

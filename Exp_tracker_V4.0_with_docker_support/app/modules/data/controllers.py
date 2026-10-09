@@ -53,6 +53,7 @@ def _db_stats(db):
 
 
 @bp.route("/data/backup")
+@admin_required
 def backup():
     """Download a SQL-dump snapshot of the whole database (all tables)."""
     try:
@@ -69,6 +70,7 @@ def backup():
 
 
 @bp.route("/data/backup.json")
+@admin_required
 def backup_json():
     """Download a legacy JSON snapshot (for old clients/backups)."""
     try:

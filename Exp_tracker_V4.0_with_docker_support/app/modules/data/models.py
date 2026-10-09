@@ -91,7 +91,7 @@ def import_budgets(db, text):
         try:
             cat_name = (row.get("category") or "").strip()
             limit_raw = (row.get("monthly_limit") or "").strip()
-            limit = round(float(limit_raw.replace(",", "")), 2)
+            limit = to_cents(limit_raw)  # rupees -> INTEGER cents (cents column)
             if limit <= 0 or not cat_name:
                 raise ValueError
             cat = cats.get(cat_name.lower())
@@ -186,10 +186,11 @@ def restore_from_csv(db, csv_texts, user_id=None):
         rec_removed = 0
     try:
         # FK-safe wipe: children first. Users are deliberately preserved.
+        # No commit until all imports succeed — any failure below rolls
+        # back the wipe too, so a failed restore leaves data intact.
         for table in ("transactions", "budgets", "recurring_transactions", "categories"):
             db.execute(f"DELETE FROM {table}")
         reseeded = category_models.seed_defaults(db)
-        db.commit()
         results = {"recurring_transactions_removed": rec_removed,
                    "recurrences_removed": rec_removed, "defaults_reseeded": reseeded}
         if "categories" in present:
@@ -205,10 +206,11 @@ def restore_from_csv(db, csv_texts, user_id=None):
                 db, present["transactions"], user_id)
         else:
             results["transactions"] = (0, 0)
-    except DB_ERRORS as e:
+        db.commit()
+    except Exception as e:  # noqa: BLE001 — any post-wipe failure must roll back
         try:
             db.rollback()
-        except DB_ERRORS:
+        except Exception:  # noqa: BLE001
             pass
         return None, f"Database error during CSV restore ({e})."
     return results, None
@@ -527,12 +529,13 @@ def restore_backup(db, payload):
             db.execute(
                 """INSERT INTO transactions
                    (id, amount, type, category_id, date, note, created_at, user_id,
-                    currency, orig_amount, split_group)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                    currency, orig_amount, split_group, deleted_at, receipt_path)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (tid, amount, ttype, cat_id,
                  str(row["date"]).strip(), str(row.get("note") or "")[:200],
                  row.get("created_at") or None, _opt_id(row, "user_id", label),
-                 code, orig, row.get("split_group") or None),
+                 code, orig, row.get("split_group") or None,
+                 row.get("deleted_at") or None, row.get("receipt_path") or None),
             )
         for n, row in enumerate(data.get("recurring_transactions", []), start=1):
             label = f"Recurring row {n} ('{str(row.get('note') or '')[:30]}')"
@@ -617,8 +620,9 @@ def _restore_amount(row):
     """(base_cents, orig_cents_or_None, error) for a backup transaction row.
 
     Old backups have only `amount` in rupees (base currency). Newer backups
-    may carry `currency` + `orig_amount` (both in rupees): the base amount
-    is reconverted from the original at the configured rate.
+    may carry `currency` + `orig_amount` (both in rupees): the stored base
+    amount is trusted verbatim so a restore is exact even if FX rates have
+    changed since the backup was taken.
     """
     code = str(row.get("currency") or _base_currency()).upper()
     try:
@@ -636,7 +640,6 @@ def _restore_amount(row):
         orig = to_cents(orig_raw)
     except (ValueError, TypeError):
         return None, None, f"orig_amount must be a positive number (got {orig_raw!r})"
-    base = int(round(orig * float(rates[code])))
     return base, orig, None
 
 
@@ -647,6 +650,55 @@ SQL_BACKUP_MARKER = "-- exptracker SQL backup"
 # Columns that exist in the live schema but must never appear in a dump
 # (e.g. Postgres GENERATED columns, which reject explicit inserts).
 _SKIP_DUMP_COLS = {"search_tsv"}
+
+# A VALUES item in our own dumps is always a plain literal: NULL, a
+# number, or a single-quoted string (with '' escapes). Anything else —
+# subselects, expressions, function calls — is rejected on restore.
+_LITERAL_RE = re.compile(
+    r"^(NULL|[-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?|'(?:[^']|'')*')$", re.S)
+
+
+def _values_are_literals(stmt):
+    """True when stmt is INSERT ... VALUES (<literals>) — one row, no expressions."""
+    m = re.search(r"\bVALUES\s*\(", stmt, re.I)
+    if not m:
+        return False
+    chars, i, n = stmt, m.end(), len(stmt)
+    depth, in_sq, items, cur = 1, False, [], []
+    while i < n:
+        ch = chars[i]
+        if in_sq:
+            cur.append(ch)
+            if ch == "'":
+                if i + 1 < n and chars[i + 1] == "'":
+                    cur.append("'")
+                    i += 2
+                    continue
+                in_sq = False
+            i += 1
+            continue
+        if ch == "'":
+            in_sq = True
+            cur.append(ch)
+        elif ch == "(":
+            return False  # no nested parens outside strings in a literal row
+        elif ch == ")":
+            depth -= 1
+            if depth == 0:
+                items.append("".join(cur))
+                tail = chars[i + 1:].strip()
+                if tail:
+                    return False  # trailing content: multi-row or extra SQL
+                return all(_LITERAL_RE.match(it.strip()) for it in items)
+            cur.append(ch)
+        elif ch == "," and depth == 1:
+            items.append("".join(cur))
+            cur = []
+        else:
+            cur.append(ch)
+        i += 1
+    return False
+
 
 # Statements a dump may contain besides data writes (executed or skipped).
 _SKIP_SQL_RE = re.compile(r"^(BEGIN|COMMIT|ROLLBACK|END|PRAGMA\b.*)$", re.I)
@@ -842,6 +894,11 @@ def restore_sql_backup(db, sql_text):
                 # Rewrite legacy table name to the current one.
                 s = re.sub(r'^INSERT\s+INTO\s+"?' + re.escape(raw_name) + r'"?',
                            f'INSERT INTO "{name}"', s, count=1, flags=re.I)
+            if not _values_are_literals(s):
+                return None, (
+                    "Backup contains a non-literal value (expression or "
+                    "subquery). Only plain downloaded backups can be restored — "
+                    "the file may be corrupted or tampered with.")
             inserts_by_table[name].append(s)
             continue
         preview = (s[:60] + "…") if len(s) > 60 else s

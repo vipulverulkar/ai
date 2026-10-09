@@ -1197,7 +1197,7 @@ def test_restore_pg_path_resets_sequences():
     assert not any("?" in s for s in stmts)
     # amounts converted back to integer cents on restore
     tx_insert = next(s for s in stmts if s.startswith("INSERT INTO transactions"))
-    assert tx_insert.count("%s") == 11  # incl. currency, orig_amount, split_group
+    assert tx_insert.count("%s") == 13  # incl. currency, orig_amount, split_group, deleted_at, receipt_path
     # one sequence reset per table (empty tables restart at 1 via 3-arg setval)
     resets = [s for s in stmts if "pg_get_serial_sequence" in s]
     assert len(resets) == 5
@@ -1295,9 +1295,10 @@ def test_metrics_endpoint(client):
     r = client.get("/metrics")
     assert r.status_code == 200
     assert b"exptracker_http_requests_total" in r.data
-    # metrics are public (no session) for scrapers
+    # metrics require login (no anonymous operational enumeration)
     c2 = client.application.test_client()
-    assert c2.get("/metrics").status_code == 200
+    r = c2.get("/metrics", follow_redirects=False)
+    assert r.status_code == 302 and "/login" in r.headers["Location"]
 
 
 def test_healthz_includes_version(client):

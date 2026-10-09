@@ -127,9 +127,13 @@ def delete(rec_id):
 @bp.route("/recurring/run", methods=["POST"])
 @admin_required
 def run_now():
-    created = models.run_due(get_db(), date.today())
+    created, capped = models.run_due(get_db(), date.today())
     if created:
         flash(f"Generated {created} transaction(s) from due recurrences.", "success")
     else:
         flash("Nothing is due right now.", "info")
+    if capped:
+        flash(f"{capped} schedule(s) hit the catch-up limit and were paused — "
+              "oldest backlog was generated, newer missed runs were dropped.",
+              "warning")
     return redirect(url_for("recurring.index"))

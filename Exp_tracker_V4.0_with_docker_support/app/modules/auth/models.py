@@ -53,12 +53,17 @@ def get_user(db, username):
 
 
 def is_admin(db, username):
-    """True when username exists and has the admin role."""
+    """True when username exists and has the admin role.
+
+    Fail-closed: missing/NULL/empty roles are NOT admin. (Pre-roles rows
+    without the column at all still count as admin so a failed migration
+    can't lock everyone out — migrations add the column on boot.)
+    """
     row = get_user(db, username)
     if not row:
         return False
     try:
-        return (row["role"] or "admin") == "admin"
+        return (row["role"] or "viewer") == "admin"
     except (KeyError, IndexError):
         return True  # pre-roles database rows are treated as admins
 
@@ -68,7 +73,7 @@ def role_of(db, username):
     if not row:
         return None
     try:
-        return row["role"] or "admin"
+        return row["role"] or "viewer"
     except (KeyError, IndexError):
         return "admin"
 
@@ -112,6 +117,28 @@ def totp_confirm(db, username, code):
     except (ValueError, TypeError):
         return "Invalid code format."
     db.execute("UPDATE users SET totp_enabled=1 WHERE username=?", (username,))
+    db.commit()
+    return None
+
+
+def totp_confirm_pending(db, username, secret, code):
+    """Verify a code against a pending (not yet active) secret and activate it.
+
+    Used for re-enrollment: the current secret stays active until the new
+    one is proven, so abandoning the flow never leaves 2FA disabled.
+    """
+    if pyotp is None:
+        return "2FA requires the pyotp package."
+    if not secret:
+        return "Start 2FA setup first."
+    try:
+        ok = pyotp.TOTP(secret).verify((code or "").strip(), valid_window=1)
+    except (ValueError, TypeError):
+        return "Invalid code format."
+    if not ok:
+        return "Invalid code — check your authenticator app."
+    db.execute("UPDATE users SET totp_secret=?, totp_enabled=1 WHERE username=?",
+               (secret, username))
     db.commit()
     return None
 
@@ -205,16 +232,15 @@ def count_users(db):
 
 
 def count_admins(db):
-    """Number of admin accounts (pre-roles rows count as admins)."""
+    """Number of admin accounts (NULL/empty roles fail closed: not counted)."""
     try:
         return db.execute(
-            "SELECT COUNT(*) FROM users WHERE role='admin' OR role IS NULL"
-            " OR role=''").fetchone()[0]
+            "SELECT COUNT(*) FROM users WHERE role='admin'").fetchone()[0]
     except DB_ERRORS:
         return count_users(db)
 
 
-def create_user(db, username, password, role="admin"):
+def create_user(db, username, password, role="viewer"):
     """Insert a user with a hashed password. Returns an error message or None."""
     err = validate_new_user(username, password)
     if err:
@@ -247,7 +273,7 @@ def set_role(db, user_id, role):
     if role not in ROLES:
         return "Role must be admin or viewer."
     row = db.execute("SELECT role FROM users WHERE id=?", (user_id,)).fetchone()
-    if row and (row["role"] or "admin") == "admin" and role != "admin" \
+    if row and (row["role"] or "viewer") == "admin" and role != "admin" \
             and count_admins(db) <= 1:
         return "Cannot demote the last remaining admin."
     db.execute("UPDATE users SET role=? WHERE id=?", (role, user_id))
@@ -258,7 +284,7 @@ def set_role(db, user_id, role):
 def delete_user(db, user_id):
     """Delete a user by id. Returns an error message or None (last-admin guard)."""
     row = db.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
-    if row and (row["role"] or "admin") == "admin" and count_admins(db) <= 1:
+    if row and (row["role"] or "viewer") == "admin" and count_admins(db) <= 1:
         return "Cannot delete the last remaining admin."
     db.execute("DELETE FROM users WHERE id=?", (user_id,))
     db.commit()

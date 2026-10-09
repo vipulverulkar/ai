@@ -8,6 +8,27 @@ from flask import current_app
 
 REQUIRED_FIELDS = ["date", "type", "category", "amount"]
 
+# Lowercased header aliases used to auto-guess the column mapping when a
+# bank CSV is uploaded. First match wins.
+HEADER_ALIASES = {
+    "date": ("date", "txn date", "transaction date", "value date",
+             "posting date", "posted date", "booking date", "txn_date",
+             "transaction_date", "valuedate", "tran date"),
+    "amount": ("amount", "amt", "value", "transaction amount", "net amount"),
+    "debit": ("debit", "dr", "withdrawal", "withdrawals", "paid out",
+              "money out", "debits"),
+    "credit": ("credit", "cr", "deposit", "deposits", "paid in",
+               "money in", "credits"),
+    "type": ("type", "dr/cr", "drcr", "debit/credit", "debit credit",
+             "transaction type", "txn type", "d/c", "tran type"),
+    "category": ("category", "description", "narration", "particulars",
+                 "remarks", "merchant", "payee", "details",
+                 "transaction description", "transaction details",
+                 "transaction remarks", "label"),
+    "note": ("note", "notes", "reference", "ref no", "refno", "reference no",
+             "utr", "transaction id", "txn id", "cheque", "check"),
+}
+
 
 def get_template(db, name):
     """Fetch a mapping template by name."""
@@ -40,8 +61,96 @@ def apply_mapping(row, mapping):
 
 
 def validate_mapping(mapping):
-    """Ensure all required fields are mapped."""
-    return all(field in mapping for field in REQUIRED_FIELDS)
+    """Ensure all required fields are mapped.
+
+    Amount may alternatively be given as a debit+credit column pair
+    (common in bank statements), in which case no single amount column
+    or explicit type column is needed.
+    """
+    if not mapping:
+        return False
+    if not all(f in mapping for f in ("date", "category")):
+        return False
+    if "amount" in mapping:
+        return True
+    return "debit" in mapping and "credit" in mapping
+
+
+def guess_mapping(headers):
+    """Auto-guess a column mapping from CSV headers.
+
+    Returns {target_field: header_or_None}. Exact (case-insensitive)
+    matches are tried before substring matches so e.g. "Transaction
+    Date" beats "Value Date" only by alias order.
+    """
+    norm = {str(h or "").strip().lower(): h for h in (headers or [])}
+    guessed = {}
+    for target, aliases in HEADER_ALIASES.items():
+        found = None
+        for alias in aliases:
+            if alias in norm:
+                found = norm[alias]
+                break
+        if found is None:
+            for alias in aliases:
+                for low, orig in norm.items():
+                    if alias in low:
+                        found = orig
+                        break
+                if found is not None:
+                    break
+        guessed[target] = found
+    return guessed
+
+
+def _safe_float(value):
+    """float() that returns None for garbage instead of raising."""
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return None
+
+
+def combine_debit_credit(row, mapping):
+    """Build (amount_raw, type_raw) from a debit/credit column pair.
+
+    Returns (amount_string, 'expense'|'income'|None). An empty/zero side
+    means the other side applies; when both sides are empty returns
+    (None, None).
+    """
+    debit_raw = row.get(mapping.get("debit")) if mapping.get("debit") else None
+    credit_raw = row.get(mapping.get("credit")) if mapping.get("credit") else None
+    debit = normalize_amount(debit_raw)
+    credit = normalize_amount(credit_raw)
+    debit_f = _safe_float(debit) if debit else None
+    credit_f = _safe_float(credit) if credit else None
+    has_debit = debit_f is not None and debit_f != 0
+    has_credit = credit_f is not None and credit_f != 0
+    if has_credit and not has_debit:
+        return credit.lstrip('-'), "income"
+    if has_debit and not has_credit:
+        return debit.lstrip('-'), "expense"
+    if not has_debit and not has_credit:
+        return None, None
+    # Both sides filled (rare) — trust the larger one.
+    if abs(credit_f) >= abs(debit_f):
+        return credit.lstrip('-'), "income"
+    return debit.lstrip('-'), "expense"
+
+
+def sample_values(rows, headers, limit=3):
+    """First `limit` non-empty values per header — shown under mapping dropdowns."""
+    samples = {h: [] for h in (headers or [])}
+    for row in (rows or []):
+        for h in samples:
+            if len(samples[h]) >= limit:
+                continue
+            v = (row.get(h) or "").strip() if isinstance(row.get(h), str) else row.get(h)
+            if v not in (None, "") and v not in samples[h]:
+                samples[h].append(v)
+        if all(len(v) >= limit for v in samples.values()):
+            break
+    return samples
 
 
 def detect_csv_encoding(file_bytes):

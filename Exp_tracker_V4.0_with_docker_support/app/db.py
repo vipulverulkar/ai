@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS recurring_transactions (
     next_run_date TEXT NOT NULL CHECK (next_run_date = strftime('%Y-%m-%d', next_run_date)),
     start_date TEXT,
     end_date TEXT,
+    anchor_day INTEGER,
     active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
     last_run_at TEXT,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -153,6 +154,7 @@ CREATE TABLE IF NOT EXISTS recurring_transactions (
     next_run_date TEXT NOT NULL,
     start_date TEXT,
     end_date TEXT,
+    anchor_day INTEGER,
     active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
     last_run_at TEXT,
     created_at TIMESTAMPTZ DEFAULT now()
@@ -558,6 +560,7 @@ def _migrate(conn):
         ("recurring_transactions", "orig_amount", "INTEGER"),
         ("recurring_transactions", "start_date", "TEXT"),
         ("recurring_transactions", "end_date", "TEXT"),
+        ("recurring_transactions", "anchor_day", "INTEGER"),
     ):
         try:
             conn.execute(f"SELECT {column} FROM {table} LIMIT 1").fetchone()
@@ -575,8 +578,28 @@ def _migrate(conn):
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
         conn.commit()
     _add_pg_tsv_column(conn)
+    _backfill_anchor_day(conn)
     _drop_if_exists(conn, "transactions", "member_id")
     _drop_table_if_exists(conn, "members")
+
+
+def _backfill_anchor_day(conn):
+    """Fill anchor_day for schedules created before the column existed.
+
+    The anchor is the intended day-of-month (from start_date, else the
+    next run date) so monthly schedules stop drifting after short months.
+    """
+    try:
+        conn.execute(
+            "UPDATE recurring_transactions SET anchor_day="
+            "CAST(substr(COALESCE(start_date, next_run_date), 9, 2) AS INTEGER)"
+            " WHERE anchor_day IS NULL")
+        conn.commit()
+    except DB_ERRORS:
+        try:
+            conn.rollback()
+        except DB_ERRORS:
+            pass
 
 
 def _ensure_fts(conn):

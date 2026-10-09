@@ -18,7 +18,12 @@ def index():
     # Auto-process due recurring transactions so the dashboard is current.
     from ..recurring import models as recurring_models
     try:
-        recurring_models.run_due(db, today)
+        from flask import flash as _flash
+        _, capped = recurring_models.run_due(db, today)
+        if capped:
+            _flash(f"{capped} overdue schedule(s) hit the catch-up limit and were "
+                   "paused — oldest backlog was generated, newer missed runs were "
+                   "dropped. Resume them from Recurring if needed.", "warning")
     except Exception:  # noqa: BLE001 — never block the dashboard on scheduling
         pass
 

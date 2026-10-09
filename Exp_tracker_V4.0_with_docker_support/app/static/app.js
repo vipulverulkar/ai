@@ -1,5 +1,30 @@
 // Expense Tracker — theme + form helpers
 (function () {
+  // Data submenu: tap-to-toggle for touch (first tap opens, second follows).
+  // Hover/focus-within already cover mouse + keyboard via CSS.
+  document.addEventListener('click', function (e) {
+    var toggle = e.target.closest ? e.target.closest('.drop > a') : null;
+    var openDrop = document.querySelector('.drop.open');
+    if (toggle) {
+      var drop = toggle.parentElement;
+      if (!drop.classList.contains('open')) {
+        e.preventDefault();
+        if (openDrop) {
+          openDrop.classList.remove('open');
+          var prev = openDrop.querySelector(':scope > a');
+          if (prev) prev.setAttribute('aria-expanded', 'false');
+        }
+        drop.classList.add('open');
+        toggle.setAttribute('aria-expanded', 'true');
+      }
+      return;
+    }
+    if (openDrop && !(e.target.closest && e.target.closest('.drop'))) {
+      openDrop.classList.remove('open');
+      var cur = openDrop.querySelector(':scope > a');
+      if (cur) cur.setAttribute('aria-expanded', 'false');
+    }
+  });
   var root = document.documentElement;
 
   // Theme: respect saved choice, else prefers-color-scheme

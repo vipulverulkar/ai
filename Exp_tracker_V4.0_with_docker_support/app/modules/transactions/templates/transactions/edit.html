@@ -42,7 +42,7 @@
     <label>Receipt
       <input type="file" name="receipt" accept="image/*,application/pdf">
       {% if tx['receipt_path'] %}
-      <a href="{{ url_for('static', filename=tx['receipt_path'][8:]) }}" target="_blank" style="font-size:0.8em; margin-left:8px">View current ↗</a>
+      <a href="{{ url_for('static', filename=tx['receipt_path'][7:]) }}" target="_blank" style="font-size:0.8em; margin-left:8px">View current ↗</a>
       {% endif %}
     </label>
     <label>For

@@ -10,7 +10,10 @@ from ...db import get_db, log_action
 from ...helpers import page_window, paginate
 from . import bp, models
 
-PUBLIC_ENDPOINTS = {"auth.login", "auth.login_totp", "healthz", "metrics", "static"}
+PUBLIC_ENDPOINTS = {"auth.login", "auth.login_totp", "healthz", "static"}
+
+# How long the password-validated 2FA half-session lasts (seconds).
+PENDING_TTL = 10 * 60
 
 
 @bp.before_app_request
@@ -68,6 +71,7 @@ def login():
                 # Second factor required — keep a pending marker only.
                 session.clear()  # avoid session fixation
                 session["pending_user"] = username
+                session["pending_at"] = time.time()
                 session["last_active"] = time.time()
                 return redirect(url_for("auth.login_totp"))
             session.clear()  # avoid session fixation
@@ -83,6 +87,16 @@ def login():
 def login_totp():
     username = session.get("pending_user")
     if not username:
+        return redirect(url_for("auth.login"))
+    # The password-validated half-session expires quickly so the second
+    # factor cannot be brute-forced indefinitely.
+    try:
+        pending_age = time.time() - float(session.get("pending_at", 0))
+    except (ValueError, TypeError):
+        pending_age = PENDING_TTL + 1
+    if pending_age > PENDING_TTL:
+        session.clear()
+        flash("Verification expired. Please sign in again.", "error")
         return redirect(url_for("auth.login"))
     if request.method == "POST":
         if models.totp_verify(get_db(), username, request.form.get("code", "")):
@@ -147,10 +161,27 @@ def profile():
 
 
 @bp.route("/profile/totp/enable", methods=["POST"])
+@limiter.limit("10 per minute")
 def totp_enable():
-    """Generate a pending TOTP secret and show it once for enrollment."""
+    """Generate a pending TOTP secret and show it once for enrollment.
+
+    Re-enrollment keeps the current secret active until the new one is
+    confirmed — the account is never left without 2FA mid-flow.
+    """
     db = get_db()
     username = session.get("user", "")
+    if models.totp_enabled(db, username):
+        try:
+            import pyotp as _pyotp
+        except ImportError:
+            _pyotp = None
+        if _pyotp is None:
+            flash("2FA requires the pyotp package (pip install pyotp).", "error")
+            return redirect(url_for("auth.profile"))
+        secret = _pyotp.random_base32()
+        session["totp_pending_secret"] = secret
+        session["totp_secret"] = secret  # shown once on the next profile render
+        return redirect(url_for("auth.profile"))
     secret, err = models.totp_start(db, username)
     if err:
         flash(err, "error")
@@ -160,8 +191,19 @@ def totp_enable():
 
 
 @bp.route("/profile/totp/confirm", methods=["POST"])
+@limiter.limit("10 per minute")
 def totp_confirm():
     db = get_db()
+    pending = session.get("totp_pending_secret")
+    if pending:
+        err = models.totp_confirm_pending(db, session.get("user", ""),
+                                          pending, request.form.get("code", ""))
+        if err:
+            flash(err, "error")
+        else:
+            session.pop("totp_pending_secret", None)
+            flash("Two-factor authentication enabled.", "success")
+        return redirect(url_for("auth.profile"))
     err = models.totp_confirm(db, session.get("user", ""),
                               request.form.get("code", ""))
     if err:
@@ -172,6 +214,7 @@ def totp_confirm():
 
 
 @bp.route("/profile/totp/disable", methods=["POST"])
+@limiter.limit("10 per minute")
 def totp_disable():
     db = get_db()
     err = models.totp_disable(db, session.get("user", ""),
@@ -192,7 +235,7 @@ def users():
     db = get_db()
     if request.method == "POST":
         username = request.form.get("username", "")
-        role = request.form.get("role", "admin")
+        role = request.form.get("role", "viewer")
         err = models.create_user(db, username, request.form.get("password", ""), role)
         if err:
             flash(err, "error")
@@ -205,6 +248,7 @@ def users():
 
 
 @bp.route("/users/<int:user_id>")
+@admin_required
 def user_profile(user_id):
     """Expense profile — the expenses managed for one user."""
     db = get_db()

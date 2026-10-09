@@ -13,8 +13,8 @@ def _summary_json():
 
 def _transactions_json():
     try:
-        limit = min(int(request.args.get("limit", 50)), 500)
-    except ValueError:
+        limit = max(1, min(int(request.args.get("limit", 50)), 500))
+    except (ValueError, TypeError):
         limit = 50
     f_type = request.args.get("type", "all")
     return jsonify(models.latest(get_db(), limit, f_type))

@@ -4,10 +4,16 @@ from datetime import date, datetime
 PER_PAGE_CHOICES = (10, 25, 50, 100)
 
 def to_cents(value):
-    """Convert decimal amount (string or float) to integer cents."""
+    """Convert decimal amount (string or float) to integer cents.
+
+    Uses Decimal (ROUND_HALF_UP) so 3rd-decimal inputs convert exactly —
+    float would give int(1.005*100) == 100 instead of 101.
+    """
+    from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
     try:
-        return int(round(float(str(value).replace(",", "").strip()) * 100))
-    except (ValueError, TypeError):
+        return int((Decimal(str(value).replace(",", "").strip()) * 100)
+                   .to_integral_value(rounding=ROUND_HALF_UP))
+    except (InvalidOperation, ValueError, TypeError, AttributeError):
         return 0
 
 def from_cents(cents):

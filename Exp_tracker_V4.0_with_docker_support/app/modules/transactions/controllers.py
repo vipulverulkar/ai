@@ -38,6 +38,35 @@ def _month_options(selected="", n=12):
     return opts
 
 
+ALLOWED_RECEIPT_EXTS = {"png", "jpg", "jpeg", "gif", "pdf", "webp"}
+MAX_RECEIPT_BYTES = 5 * 1024 * 1024
+
+
+def _save_receipt(receipt_file):
+    """Validate and store an uploaded receipt. Returns rel_path or (None, err)."""
+    import uuid
+    filename = secure_filename(receipt_file.filename or "")
+    if not filename or "." not in filename:
+        return None, "Receipt must be an image or PDF file."
+    ext = filename.rsplit(".", 1)[-1].lower()
+    if ext not in ALLOWED_RECEIPT_EXTS:
+        return None, "Receipt must be one of: PNG, JPG, GIF, PDF, WEBP."
+    # Enforce a per-file size cap (app has no global MAX_CONTENT_LENGTH).
+    receipt_file.seek(0, os.SEEK_END)
+    size = receipt_file.tell()
+    receipt_file.seek(0)
+    if size > MAX_RECEIPT_BYTES:
+        return None, "Receipt file is too large (max 5 MB)."
+    if size == 0:
+        return None, "Receipt file is empty."
+    safe = f"{uuid.uuid4().hex[:12]}_{filename}"
+    rel_path = os.path.join("static", "receipts", safe)
+    abs_path = os.path.join(current_app.root_path, rel_path)
+    os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+    receipt_file.save(abs_path)
+    return rel_path, None
+
+
 def _filter_args(db):
     """Parse filter/sort params from the query string."""
     f_type = request.args.get("type", "all")
@@ -123,6 +152,7 @@ def export():
 
 
 @bp.route("/transactions/import", methods=["POST"])
+@admin_required
 def import_csv():
     f = request.files.get("file")
     if not f or not f.filename.lower().endswith(".csv"):
@@ -209,7 +239,7 @@ def add():
     amount = base
 
     # Optional split lines (each becomes its own linked transaction row).
-    lines, serr = models.parse_splits(db, request.form, ttype, amount)
+    lines, serr = models.parse_splits(db, request.form, ttype, amount, code)
     if serr:
         flash(serr, "error")
         return redirect(url_for("dashboard.index"))
@@ -217,20 +247,27 @@ def add():
     receipt_file = request.files.get("receipt")
     receipt_path = None
     if receipt_file and receipt_file.filename != "":
-        filename = secure_filename(receipt_file.filename)
-        # Store in app/static/receipts/
-        rel_path = os.path.join("static", "receipts", filename)
-        abs_path = os.path.join(current_app.root_path, rel_path)
-        receipt_file.save(abs_path)
-        receipt_path = rel_path
+        receipt_path, rerr = _save_receipt(receipt_file)
+        if rerr:
+            flash(rerr, "error")
+            return redirect(url_for("dashboard.index"))
 
     if lines:
         group = models.new_split_group()
         remainder = amount - sum(a for _, a in lines)
         all_lines = [(cat["id"], remainder)] + lines
-        for cat_id, line_amount in all_lines:
+        if orig is not None:
+            # Split the original-currency amount proportionally so each
+            # line keeps an auditable orig value that sums to the total.
+            rate = models.rate_to_base(code)
+            orig_lines = [int(round(a / rate)) for _, a in all_lines]
+            drift = orig - sum(orig_lines)
+            orig_lines[0] += drift
+        else:
+            orig_lines = [None] * len(all_lines)
+        for (cat_id, line_amount), line_orig in zip(all_lines, orig_lines):
             models.create(db, line_amount, ttype, cat_id, date_str, note,
-                          owner_id, currency=code, orig_amount=orig,
+                          owner_id, currency=code, orig_amount=line_orig,
                           split_group=group, receipt_path=receipt_path)
         flash(f"Transaction added, split across {len(all_lines)} categories.", "success")
     else:
@@ -271,11 +308,11 @@ def edit(tx_id):
         receipt_file = request.files.get("receipt")
         receipt_path = tx["receipt_path"]
         if receipt_file and receipt_file.filename != "":
-            filename = secure_filename(receipt_file.filename)
-            rel_path = os.path.join("static", "receipts", filename)
-            abs_path = os.path.join(current_app.root_path, rel_path)
-            receipt_file.save(abs_path)
-            receipt_path = rel_path
+            saved, rerr = _save_receipt(receipt_file)
+            if rerr:
+                flash(rerr, "error")
+                return redirect(url_for("transactions.edit", tx_id=tx_id))
+            receipt_path = saved
 
         models.update(db, tx_id, base, ttype, cat["id"], date_str, note,
                       owner_id, currency=code, orig_amount=orig, receipt_path=receipt_path)

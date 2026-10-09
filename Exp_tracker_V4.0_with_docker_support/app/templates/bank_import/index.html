@@ -4,51 +4,70 @@
 <div class="page-head">
   <div>
     <h1>Bank Statement Import</h1>
-    <p class="sub">Upload your statement and map the columns</p>
+    <p class="sub">Upload your statement → map columns → preview → import</p>
+  </div>
+  <div class="head-actions">
+    <a class="btn ghost" href="{{ url_for('data.index') }}">← Data</a>
   </div>
 </div>
 
+{% if not is_admin %}
+<div class="alert near">Bank imports need an admin account — you can browse, but only admins can import.</div>
+{% endif %}
+
 <section class="panel narrow">
-  <form method="post" action="{{ url_for('bank_import.preview') }}" enctype="multipart/form-data">
+  <div class="panel-head">
+    <span class="pic">🏦</span>
+    <div><h2>1 · Choose file</h2><p>Any bank CSV — columns are mapped on the next step</p></div>
+  </div>
+  <form method="post" action="{{ url_for('bank_import.map_columns') }}" enctype="multipart/form-data">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    
-    <label>Select Import Template (Optional)
+    {% if is_admin %}
+    <label>CSV file (max 2 MB)
+      <input type="file" name="file" accept=".csv" {% if not staged %}required{% endif %}>
+    </label>
+    {% if staged %}
+    <p class="hint">A file is already staged: <strong>{{ staged_name }}</strong> — pick a new one to replace it, or continue below.</p>
+    {% endif %}
+    <label>Start from a saved template (optional)
       <select name="template_id">
-        <option value="">-- Custom Mapping --</option>
+        <option value="">— Auto-detect columns —</option>
         {% for t in templates %}
         <option value="{{ t['id'] }}">{{ t['name'] }}</option>
         {% endfor %}
       </select>
     </label>
-
-    <label>Upload CSV File
-      <input type="file" name="file" accept=".csv" required>
-    </label>
-
-    <hr style="margin: 20px 0; border: 0; border-top: 1px solid var(--line);">
-
-    <h3>Column Mapping</h3>
-    <p class="hint">Map your bank's column names to our required fields</p>
-    
-    <div class="row">
-      <label>Date * <input type="text" name="map_date" placeholder="e.g. Transaction Date" required></label>
-      <label>Type <input type="text" name="map_type" placeholder="e.g. Dr/Cr (optional)"></label>
-    </div>
-    <div class="row">
-      <label>Category/Description * <input type="text" name="map_category" placeholder="e.g. Description" required></label>
-      <label>Amount * <input type="text" name="map_amount" placeholder="e.g. Value" required></label>
-    </div>
-    <div class="row">
-      <label>Note <input type="text" name="map_note" placeholder="e.g. Remarks (optional)"></label>
-    </div>
-
-    <button class="btn primary block" type="submit" style="margin-top: 20px">Preview Import</button>
+    <button class="btn primary block" type="submit" style="margin-top:12px">Continue to column mapping →</button>
+    {% else %}
+    <p class="hint">Sign in as an admin to import bank statements.</p>
+    {% endif %}
   </form>
-  
-  <p class="hint" style="margin-top: 16px">
-    <strong>Supported formats:</strong> The import supports various date formats (DD/MM/YYYY, YYYY-MM-DD, etc.) 
-    and amount formats with commas and currency symbols. If your bank uses separate Dr/Cr columns, 
-    map the Type field. If amounts are signed (negative for debits), you can leave Type empty.
-  </p>
 </section>
+
+{% if templates %}
+<section class="panel narrow" style="margin-top:16px">
+  <div class="panel-head">
+    <span class="pic">📑</span>
+    <div><h2>Saved templates</h2><p>Reuse a column mapping for repeat imports</p></div>
+  </div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Template</th><th></th></tr></thead>
+    <tbody>
+    {% for t in templates %}
+      <tr>
+        <td>{{ t['name'] }}</td>
+        <td class="num">
+          {% if is_admin %}
+          <form method="post" action="{{ url_for('bank_import.delete_template', template_id=t['id']) }}" style="display:inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn small ghost" type="submit">Delete</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endif %}
 {% endblock %}

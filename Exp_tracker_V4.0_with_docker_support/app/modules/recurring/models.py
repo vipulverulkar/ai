@@ -9,18 +9,24 @@ FREQUENCIES = ("daily", "weekly", "monthly", "yearly")
 MAX_CATCHUP_ITERATIONS = 366  # safety cap when running due items
 
 
-def _advance(d, frequency):
-    """Next occurrence date for a given frequency."""
+def _advance(d, frequency, anchor=None):
+    """Next occurrence date for a given frequency.
+
+    Monthly/yearly schedules keep the original day-of-month (`anchor`)
+    so Jan 31 -> Feb 28 -> Mar 31 instead of drifting to the 28th forever.
+    """
     if frequency == "daily":
         return d + timedelta(days=1)
     if frequency == "weekly":
         return d + timedelta(weeks=1)
     if frequency == "monthly":
         yy, mm = (d.year + (d.month == 12), 1) if d.month == 12 else (d.year, d.month + 1)
-        return d.replace(year=yy, month=mm, day=min(d.day, calendar.monthrange(yy, mm)[1]))
+        day = min(anchor or d.day, calendar.monthrange(yy, mm)[1])
+        return d.replace(year=yy, month=mm, day=day)
     # yearly
     yy = d.year + 1
-    return d.replace(year=yy, day=min(d.day, calendar.monthrange(yy, d.month)[1]))
+    day = min(anchor or d.day, calendar.monthrange(yy, d.month)[1])
+    return d.replace(year=yy, day=day)
 
 
 def all(db):
@@ -62,13 +68,18 @@ def _row_out(r):
 def create(db, amount_cents, ttype, category_id, note, frequency, start,
            user_id=None, currency=None, orig_amount=None, end_date=None):
     from ..transactions import models as tx_models
+    try:
+        anchor = int(start[8:10])
+    except (ValueError, TypeError, IndexError):
+        anchor = None
     db.execute(
         """INSERT INTO recurring_transactions (user_id, amount, type, category_id, note,
-           currency, orig_amount, frequency, next_run_date, start_date, end_date)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+           currency, orig_amount, frequency, next_run_date, start_date, end_date,
+           anchor_day)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
         (user_id, amount_cents, ttype, category_id, note,
          currency or tx_models.base_currency(), orig_amount,
-         frequency, start, start, end_date))
+         frequency, start, start, end_date, anchor))
     db.commit()
 
 
@@ -139,24 +150,53 @@ def due_count(db, today):
         (today.isoformat(),)).fetchone()[0]
 
 
+def _row_anchor(r):
+    try:
+        anchor = r["anchor_day"]
+    except (KeyError, IndexError):
+        anchor = None
+    if anchor:
+        return int(anchor)
+    try:
+        return int((r["start_date"] or r["next_run_date"])[8:10])
+    except (ValueError, TypeError, IndexError, KeyError):
+        return None
+
+
 def run_due(db, today):
     """Generate transactions for every due recurrence (idempotent per date).
 
     Each due item produces one transaction dated on its next_run_date, the
-    schedule advances, and the loop repeats until the schedule passes today
-    or its end date (capped for safety). Schedules that run past their end
-    date are auto-finished. Returns the number of transactions created.
+    schedule advances (keeping its day-of-month anchor), and the loop
+    repeats until the schedule passes today or its end date (capped for
+    safety). Schedules that run past their end date are auto-finished.
+    Returns (created, capped): transactions created, and schedules
+    auto-deactivated after hitting the catch-up cap (caller should warn —
+    their oldest backlog was generated but the tail was dropped).
     """
+    capped = 0
+    if getattr(db, "engine", "sqlite") == "sqlite":
+        # Serialize concurrent dashboard loads so two readers can't
+        # generate the same dated rows (single commit at the end).
+        db.execute("BEGIN IMMEDIATE")
     db.execute("UPDATE recurring_transactions SET active=0 WHERE active=1"
                " AND end_date IS NOT NULL AND next_run_date > end_date")
-    rows = db.execute(
-        "SELECT * FROM recurring_transactions WHERE active=1 AND next_run_date<=?"
-        " AND (end_date IS NULL OR next_run_date <= end_date)",
-        (today.isoformat(),)).fetchall()
+    if getattr(db, "engine", "sqlite") == "pg":
+        rows = db.execute(
+            "SELECT * FROM recurring_transactions WHERE active=1 AND next_run_date<=?"
+            " AND (end_date IS NULL OR next_run_date <= end_date)"
+            " FOR UPDATE",
+            (today.isoformat(),)).fetchall()
+    else:
+        rows = db.execute(
+            "SELECT * FROM recurring_transactions WHERE active=1 AND next_run_date<=?"
+            " AND (end_date IS NULL OR next_run_date <= end_date)",
+            (today.isoformat(),)).fetchall()
     created = 0
     today_iso = today.isoformat()
     for r in rows:
         iterations = 0
+        anchor = _row_anchor(r)
         while iterations < MAX_CATCHUP_ITERATIONS:
             run_on = r["next_run_date"]
             end = r["end_date"] if "end_date" in r.keys() else None
@@ -166,13 +206,15 @@ def run_due(db, today):
                 break
             db.execute(
                 """INSERT INTO transactions (amount, type, category_id, date, note,
-                   user_id) VALUES (?,?,?,?,?,?)""",
+                   user_id, currency, orig_amount) VALUES (?,?,?,?,?,?,?,?)""",
                 (r["amount"], r["type"], r["category_id"], run_on,
-                 r["note"] or "", r["user_id"]))
+                 r["note"] or "", r["user_id"],
+                 r["currency"] if "currency" in r.keys() and r["currency"] else "INR",
+                 r["orig_amount"] if "orig_amount" in r.keys() else None))
             db.execute(
                 "UPDATE recurring_transactions SET next_run_date=?, last_run_at=? WHERE id=?",
                 (_advance(datetime.strptime(run_on, "%Y-%m-%d").date(),
-                          r["frequency"]).isoformat(),
+                          r["frequency"], anchor).isoformat(),
                  today_iso, r["id"]))
             created += 1
             iterations += 1
@@ -181,8 +223,9 @@ def run_due(db, today):
         # skip runaway schedules (e.g. daily recurrence abandoned for years)
         if iterations >= MAX_CATCHUP_ITERATIONS and r["next_run_date"] <= today_iso:
             db.execute("UPDATE recurring_transactions SET active=0 WHERE id=?", (r["id"],))
+            capped += 1
         r = db.execute("SELECT * FROM recurring_transactions WHERE id=?", (r["id"],)).fetchone()
         if r["end_date"] and r["next_run_date"] > r["end_date"]:
             db.execute("UPDATE recurring_transactions SET active=0 WHERE id=?", (r["id"],))
     db.commit()
-    return created
+    return created, capped

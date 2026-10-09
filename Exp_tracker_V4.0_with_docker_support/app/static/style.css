@@ -73,6 +73,20 @@ body {
 .links a:hover { color: #fff; background: rgba(255,255,255,.1); }
 .links a.active { color: #fff; background: linear-gradient(135deg, var(--brand), var(--brand2));
   box-shadow: 0 3px 10px rgba(99,102,241,.5); }
+/* Data submenu: Backup & restore · Bank import · Audit log.
+   The padding-top bridges the parent and the panel so the mouse can travel
+   without losing :hover (a margin gap would make items unclickable). */
+.drop { position: relative; display: flex; }
+.drop > a { display: inline-flex; align-items: center; gap: 2px; }
+.drop > a .caret { font-size: 11px; opacity: .8; }
+.drop .menu { display: none; position: absolute; top: 100%; left: 0; min-width: 200px;
+  padding-top: 6px; z-index: 50; }
+.drop .menu-inner { background: #1e293b; border: 1px solid rgba(255,255,255,.12);
+  border-radius: 12px; padding: 4px; box-shadow: 0 12px 32px rgba(0,0,0,.45); }
+.drop .menu a { display: block; white-space: nowrap; }
+.drop:hover .menu, .drop:focus-within .menu, .drop.open .menu { display: block; }
+/* Anchor targets (e.g. #add-user) must clear the sticky nav when jumped to. */
+#add-user { scroll-margin-top: 90px; }
 .theme-btn { border: 1px solid rgba(255,255,255,.18); background: rgba(255,255,255,.08);
   color: #fff; border-radius: 10px; padding: 7px 11px; cursor: pointer; font-size: 15px; }
 .theme-btn:hover { background: rgba(255,255,255,.16); }
@@ -383,7 +397,7 @@ details.import-box summary { cursor: pointer; font-weight: 700; font-size: 14px;
   .brand { white-space: nowrap; }
   .links a { padding: 6px 9px; font-size: 13px; }
   .nav-inner { flex-wrap: wrap; }
-  .links { overflow-x: auto; max-width: 100%; }
+  .links { flex-wrap: wrap; overflow: visible; max-width: 100%; }
 }
 
 @media (max-width: 560px) {

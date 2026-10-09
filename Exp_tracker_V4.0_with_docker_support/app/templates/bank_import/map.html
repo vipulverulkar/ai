@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block title %}Map Columns – Bank Import{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>2 · Map columns</h1>
+    <p class="sub">{{ filename }} — guesses are pre-selected, adjust if needed</p>
+  </div>
+  <div class="head-actions">
+    <a class="btn ghost" href="{{ url_for('data.index') }}">← Data</a>
+    <a class="btn ghost" href="{{ url_for('bank_import.index') }}">← Start over</a>
+  </div>
+</div>
+
+<section class="panel">
+  <form method="post" action="{{ url_for('bank_import.preview') }}" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {% if cookie_mode %}
+    <label>CSV file * (cookie sessions can't stage it — re-attach here)
+      <input type="file" name="file" accept=".csv" required>
+    </label>
+    {% endif %}
+
+    <div class="grid two">
+      <label>Date column *
+        <select name="map_date" required>
+          {% for h in headers %}
+          <option value="{{ h }}" {% if mapping.get('date') == h %}selected{% endif %}>{{ h }}</option>
+          {% endfor %}
+        </select>
+        <span class="hint">Any common format works: DD/MM/YYYY, YYYY-MM-DD, DD.MM.YYYY…</span>
+      </label>
+      <label>Description column * <span class="hint" style="display:inline">(becomes category, or note if a default is set)</span>
+        <select name="map_category" required>
+          {% for h in headers %}
+          <option value="{{ h }}" {% if mapping.get('category') == h %}selected{% endif %}>{{ h }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+
+    <div class="grid two">
+      <label>Amount column *
+        <select name="map_amount" id="map_amount">
+          <option value="">— use Debit + Credit pair instead —</option>
+          {% for h in headers %}
+          <option value="{{ h }}" {% if mapping.get('amount') == h %}selected{% endif %}>{{ h }}</option>
+          {% endfor %}
+        </select>
+        <span class="hint">Symbols, commas and negatives (or brackets) are handled.</span>
+      </label>
+      <label>Type column <span class="hint" style="display:inline">(optional — Dr/Cr, debit/credit…)</span>
+        <select name="map_type">
+          <option value="">— detect from amount sign —</option>
+          {% for h in headers %}
+          <option value="{{ h }}" {% if mapping.get('type') == h %}selected{% endif %}>{{ h }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+
+    <details>
+      <summary style="cursor:pointer">Separate Debit / Credit columns? (statements without a single Amount column)</summary>
+      <div class="grid two" style="margin-top:8px">
+        <label>Debit column
+          <select name="map_debit">
+            <option value="">— none —</option>
+            {% for h in headers %}
+            <option value="{{ h }}" {% if mapping.get('debit') == h %}selected{% endif %}>{{ h }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>Credit column
+          <select name="map_credit">
+            <option value="">— none —</option>
+            {% for h in headers %}
+            <option value="{{ h }}" {% if mapping.get('credit') == h %}selected{% endif %}>{{ h }}</option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+    </details>
+
+    <div class="grid two">
+      <label>Note column (optional)
+        <select name="map_note">
+          <option value="">— none —</option>
+          {% for h in headers %}
+          <option value="{{ h }}" {% if mapping.get('note') == h %}selected{% endif %}>{{ h }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Put everything in one category (optional)
+        <select name="default_category">
+          <option value="">— auto-create from description —</option>
+          {% for c in categories %}
+          <option value="{{ c['id'] }}" {% if default_category == c['id']|string %}selected{% endif %}>{{ c['name'] }} ({{ c['type'] }})</option>
+          {% endfor %}
+        </select>
+        <span class="hint">Recommended: avoids one category per shop — description goes to the note.</span>
+      </label>
+    </div>
+
+    <div class="row" style="margin-top:12px">
+      <button class="btn primary" type="submit" style="flex:1">Preview →</button>
+    </div>
+
+    <hr style="margin:16px 0; border:0; border-top:1px solid var(--line)">
+    <div class="row">
+      <input type="text" name="template_name" placeholder="Template name, e.g. HDFC savings" maxlength="50" style="flex:1">
+      <button class="btn ghost" type="submit" formaction="{{ url_for('bank_import.save_template') }}">Save mapping as template</button>
+    </div>
+    <p class="hint">Reuse this mapping next month — pick it on step 1.</p>
+  </form>
+</section>
+
+<section class="panel" style="margin-top:16px">
+  <div class="panel-head">
+    <span class="pic">📄</span>
+    <div><h2>Your file</h2><p>First rows, exactly as uploaded</p></div>
+  </div>
+  <div class="table-wrap"><table>
+    <thead><tr>{% for h in headers %}<th>{{ h }}</th>{% endfor %}</tr></thead>
+    <tbody>
+    {% for row in sample_rows %}
+      <tr>{% for h in headers %}<td>{{ row[h] or '' }}</td>{% endfor %}</tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% if samples %}
+  <p class="hint" style="margin-top:8px">Sample values per column:
+    {% for h, vals in samples.items() %}<strong>{{ h }}:</strong> {{ vals|join(' · ') }}<br>{% endfor %}
+  </p>
+  {% endif %}
+</section>
+
+<script>
+// Keep the Amount vs Debit/Credit pair mutually exclusive to avoid confusion.
+(function () {
+  var amt = document.getElementById('map_amount');
+  if (!amt) return;
+  var debit = document.querySelector('select[name="map_debit"]');
+  var credit = document.querySelector('select[name="map_credit"]');
+  function sync() {
+    var pair = (debit.value || credit.value);
+    if (pair && amt.value) amt.value = '';
+  }
+  debit.addEventListener('change', sync);
+  credit.addEventListener('change', sync);
+  amt.addEventListener('change', function () {
+    if (amt.value) { debit.value = ''; credit.value = ''; }
+  });
+})();
+</script>
+{% endblock %}

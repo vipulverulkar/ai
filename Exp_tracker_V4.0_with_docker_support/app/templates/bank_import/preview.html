@@ -3,21 +3,21 @@
 {% block content %}
 <div class="page-head">
   <div>
-    <h1>Import Preview</h1>
-    <p class="sub">Review how your bank data will be imported</p>
+    <h1>3 · Preview &amp; confirm</h1>
+    <p class="sub">{{ filename }} · {{ ok_count }}/{{ preview_rows|length }} shown rows parse OK · {{ total_rows }} rows total</p>
+  </div>
+  <div class="head-actions">
+    <a class="btn ghost" href="{{ url_for('data.index') }}">← Data</a>
+    <a class="btn ghost" href="{{ url_for('bank_import.index') }}">← Start over</a>
   </div>
 </div>
 
 <section class="panel">
-  <div class="panel-head">
-    <span class="pic">👁️</span>
-    <div><h2>Preview (First 5 rows)</h2><p>Verify the mapping before importing</p></div>
-  </div>
-  
   {% if preview_rows %}
   <div class="table-wrap"><table>
     <thead>
       <tr>
+        <th></th>
         <th>Date</th>
         <th>Type</th>
         <th>Category</th>
@@ -27,44 +27,52 @@
     </thead>
     <tbody>
     {% for row in preview_rows %}
+      {% if row.ok %}
       <tr>
+        <td>✅</td>
         <td>{{ row.date }}</td>
         <td><span class="badge {{ row.type }}">{{ row.type }}</span></td>
         <td>{{ row.category }}</td>
         <td class="num {{ row.type }}">{{ currency }}{{ row.amount }}</td>
         <td><span style="color:var(--muted);font-size:12px">{{ row.note or '-' }}</span></td>
       </tr>
+      {% else %}
+      <tr>
+        <td>❌</td>
+        <td colspan="5" style="color:var(--muted)">Skipped — {{ row.error }}</td>
+      </tr>
+      {% endif %}
     {% endfor %}
     </tbody>
   </table></div>
-  
-  {% if skipped %}
+
+  {% if errors %}
   <div class="alert near" style="margin-top:12px">
-    <strong>⚠️ Some rows had issues:</strong><br>
-    {% for s in skipped %}
-      {{ s }}<br>
-    {% endfor %}
+    <strong>⚠️ {{ errors|length }} shown row(s) would be skipped:</strong><br>
+    {% for e in errors %}{{ e }}<br>{% endfor %}
   </div>
   {% endif %}
-  <form method="post" action="{{ url_for('bank_import.import_bank') }}" enctype="multipart/form-data" style="margin-top:20px">
+
+  <form method="post" action="{{ url_for('bank_import.import_bank') }}" enctype="multipart/form-data" style="margin-top:16px">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    
-    <input type="hidden" name="template_id" value="{{ template_id }}">
     {% for key, val in mapping.items() %}
     <input type="hidden" name="map_{{ key }}" value="{{ val }}">
     {% endfor %}
-    
-    <!-- Re-upload the file -->
-    <label>Re-upload the same CSV file to confirm import
+    {% if default_category %}
+    <input type="hidden" name="default_category" value="{{ default_category }}">
+    {% endif %}
+    {% if not staged %}
+    <label>CSV file * (not staged — re-attach the same file to confirm)
       <input type="file" name="file" accept=".csv" required>
     </label>
-    
-    <div class="row" style="margin-top:16px">
-      <button class="btn primary" type="submit" style="flex:1"> Confirm Import</button>
-      <a class="btn ghost" href="{{ url_for('bank_import.index') }}"> Back to Mapping</a>
+    {% endif %}
+    <div class="row">
+      <button class="btn primary" type="submit" style="flex:1" {% if not ok_count %}disabled{% endif %}>Confirm import ({{ total_rows }} rows)</button>
+      <button class="btn ghost" type="submit" formaction="{{ url_for('bank_import.map_columns') }}">← Adjust mapping</button>
     </div>
+    <p class="hint">No need to re-upload — your file is staged. Bad rows are skipped, good ones import.</p>
   </form>
-  
+
   {% else %}
   <div class="chart-empty">
     <span class="big">📭</span>

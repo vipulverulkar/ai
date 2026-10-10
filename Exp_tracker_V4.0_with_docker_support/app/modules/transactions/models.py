@@ -7,14 +7,16 @@ from datetime import date, datetime
 
 from flask import current_app
 
+from ...config import CSV_IMPORT_ROW_LIMIT as IMPORT_ROW_LIMIT
+from ...config import PER_PAGE_CHOICES as PER_PAGE_CHOICES
 from ...db import DB_ERRORS
 from ...helpers import month_bounds, parse_month, to_cents, from_cents
 
 from ..categories import models as category_models
 
 SORT_COLUMNS = {"date": "t.date", "amount": "t.amount", "category": "c.name"}
-PER_PAGE_CHOICES = (10, 25, 50, 100)
-IMPORT_ROW_LIMIT = 2000
+# Split-line count shapes the add/edit forms, their templates and the static
+# JS validator (which loops 2..4) — intentionally fixed, not env-tunable.
 MAX_SPLIT_LINES = 3  # optional extra split lines on the add form (2..4)
 
 LIST_SQL = """SELECT t.*, c.name AS category_name, c.is_savings AS is_savings, u.username AS owner_name
@@ -30,6 +32,20 @@ def rate_to_base(code):
 
 def base_currency():
     return current_app.config.get("BASE_CURRENCY", "INR")
+
+
+def _base_cents(orig_cents, rate):
+    """Convert foreign-currency cents to base-currency cents (Decimal, HALF_UP).
+
+    Consistent with helpers.to_cents so 2.5 always rounds to 3, unlike
+    Python's banker's round(). `rate` may be float or str.
+    """
+    from decimal import Decimal, ROUND_HALF_UP
+    try:
+        return int((Decimal(orig_cents) * Decimal(str(rate)))
+                   .to_integral_value(rounding=ROUND_HALF_UP))
+    except Exception:  # noqa: BLE001 — invalid rate falls back to 1:1
+        return int(orig_cents)
 
 
 def recorded_by(db, username):
@@ -72,7 +88,7 @@ def convert_to_base(amount_raw, currency):
     if code != base_currency() and code not in current_app.config.get("CURRENCY_RATES", {}):
         return None, None, f"Unsupported currency: {code}."
     rate = rate_to_base(code)
-    base = int(round(orig * rate))
+    base = _base_cents(orig, rate)
     if base <= 0:
         return None, None, "Amount converts to zero — increase it."
     return base, (orig if code != base_currency() else None), None
@@ -143,7 +159,7 @@ def parse_splits(db, form, ttype, total_cents, currency_code=None):
         amount = to_cents(amt_raw)
         if amount <= 0:
             return None, "Split amounts must be positive numbers."
-        amount = int(round(amount * rate))
+        amount = _base_cents(amount, rate)
         if amount <= 0:
             return None, "Split amounts must be positive numbers."
         lines.append((cat["id"], amount))
@@ -220,10 +236,15 @@ def filter_query(db, f_type, f_category, f_owner, f_month, f_search, sort, order
         where += " AND t.user_id = ?"
         args.append(int(f_owner))
     if f_month:
-        yy, mm = parse_month(f_month)
-        s, e = month_bounds(yy, mm)
-        where += " AND t.date >= ? AND t.date < ?"
-        args.extend([s, e])
+        from ...helpers import is_valid_month
+        if is_valid_month(f_month):
+            yy, mm = parse_month(f_month)
+            s, e = month_bounds(yy, mm)
+            where += " AND t.date >= ? AND t.date < ?"
+            args.extend([s, e])
+        # Invalid months are redirected away by the controller with a flash;
+        # direct model callers treat them as "all months" (never silently
+        # filter to the current month).
     if f_search:
         if fts_available(db) and db.engine == "sqlite":
             match = _fts_query(f_search)
@@ -288,15 +309,19 @@ def delete(db, tx_id):
 
 
 # ---------- trash (soft-deleted rows) ----------
+# NOTE: category join is LEFT so rows whose category was deleted (allowed
+# when only trashed rows referenced it) still show up as "(deleted)".
 def deleted_rows(db, limit=200):
     rows = db.execute(
         f"""SELECT t.*, c.name AS category_name, u.username AS owner_name
-            FROM transactions t JOIN categories c ON t.category_id=c.id
+            FROM transactions t LEFT JOIN categories c ON t.category_id=c.id
             LEFT JOIN users u ON u.id=t.user_id
             WHERE t.deleted_at IS NOT NULL
             ORDER BY t.deleted_at DESC, t.id DESC LIMIT ?""", (limit,)).fetchall()
     for r in rows:
         r["amount"] = from_cents(r["amount"])
+        if r["category_name"] is None:
+            r["category_name"] = "(deleted category)"
         if r["orig_amount"] is not None:
             r["orig_amount"] = from_cents(r["orig_amount"])
     return rows
@@ -310,20 +335,34 @@ def count_deleted(db):
 def deleted_page(db, per_page, offset):
     rows = db.execute(
         f"""SELECT t.*, c.name AS category_name, u.username AS owner_name
-            FROM transactions t JOIN categories c ON t.category_id=c.id
+            FROM transactions t LEFT JOIN categories c ON t.category_id=c.id
             LEFT JOIN users u ON u.id=t.user_id
             WHERE t.deleted_at IS NOT NULL
             ORDER BY t.deleted_at DESC, t.id DESC LIMIT ? OFFSET ?""",
         (per_page, offset)).fetchall()
     for r in rows:
         r["amount"] = from_cents(r["amount"])
+        if r["category_name"] is None:
+            r["category_name"] = "(deleted category)"
         if r["orig_amount"] is not None:
             r["orig_amount"] = from_cents(r["orig_amount"])
     return rows
 
 
 def restore(db, tx_id):
-    """Undo a soft delete. Returns True when a row was restored."""
+    """Undo a soft delete. Returns True when a row was restored.
+
+    Refuses when the row's category was deleted in the meantime — restoring
+    would orphan it from every listing (callers surface this as an error).
+    Returns "no_category" in that case so callers can explain.
+    """
+    row = db.execute("SELECT category_id FROM transactions"
+                     " WHERE id=? AND deleted_at IS NOT NULL", (tx_id,)).fetchone()
+    if not row:
+        return False
+    if not db.execute("SELECT id FROM categories WHERE id=?",
+                      (row["category_id"],)).fetchone():
+        return "no_category"
     cur = db.execute(
         "UPDATE transactions SET deleted_at=NULL WHERE id=? AND deleted_at IS NOT NULL",
         (tx_id,))
@@ -332,11 +371,19 @@ def restore(db, tx_id):
 
 
 def purge(db, tx_id):
-    """Permanently delete a soft-deleted row. Returns True when removed."""
-    cur = db.execute(
-        "DELETE FROM transactions WHERE id=? AND deleted_at IS NOT NULL", (tx_id,))
+    """Permanently delete a soft-deleted row.
+
+    Returns the row's receipt_path (may be None) when a row was removed,
+    False when nothing was purged — so callers can clean up the file and
+    only audit real purges.
+    """
+    row = db.execute("SELECT receipt_path FROM transactions"
+                     " WHERE id=? AND deleted_at IS NOT NULL", (tx_id,)).fetchone()
+    if not row:
+        return False
+    db.execute("DELETE FROM transactions WHERE id=? AND deleted_at IS NOT NULL", (tx_id,))
     db.commit()
-    return (cur.rowcount or 0) > 0
+    return row["receipt_path"]
 
 
 # ---------- split groups ----------
@@ -362,16 +409,22 @@ def delete_group(db, group):
 
 
 def duplicate(db, tx_id):
-    """Copy a transaction with today's date (same owner). Returns the source row or None."""
-    tx = db.execute("SELECT * FROM transactions WHERE id=?", (tx_id,)).fetchone()
+    """Copy a live transaction with today's date (same owner). Returns source or None.
+
+    Refuses trashed rows (they must be restored first) and preserves the
+    split-group link and receipt so split lines stay grouped.
+    """
+    tx = db.execute("SELECT * FROM transactions WHERE id=? AND deleted_at IS NULL",
+                    (tx_id,)).fetchone()
     if not tx:
         return None
+    # A split line keeps its group so the copy stays part of the same split.
     db.execute(
         "INSERT INTO transactions (amount,type,category_id,date,note,user_id,"
-        "currency,orig_amount) VALUES (?,?,?,?,?,?,?,?)",
+        "currency,orig_amount,split_group,receipt_path) VALUES (?,?,?,?,?,?,?,?,?,?)",
         (tx["amount"], tx["type"], tx["category_id"], date.today().isoformat(),
          tx["note"] or "", tx["user_id"], tx["currency"] or base_currency(),
-         tx["orig_amount"]),
+         tx["orig_amount"], tx["split_group"], tx["receipt_path"]),
     )
     db.commit()
     return dict(tx)
@@ -461,21 +514,26 @@ def export_rows(db, where, args, order_sql):
 
 def import_csv(db, text, user_id=None):
     """Import CSV text — required columns date,type,category,amount; optional note,owner,currency.
-    
+
     Unknown categories are auto-created. The optional owner column names the
-    user the expense is managed for; unknown or blank owners fall back to
-    user_id (the importer). Optional currency: when set (and not the base
-    currency) the amount is interpreted in that currency and converted to
+    user the expense is managed for; a named but unknown owner makes that
+    row skipped (counted, never silently misattributed); blank owners fall
+    back to user_id (the importer). Optional currency: when set (and not the
+    base currency) the amount is interpreted in that currency and converted to
     base cents at the configured static rate. Rows commit individually so a
-    bad row never rolls back good ones. Returns (inserted, skipped).
+    bad row never rolls back good ones.
+    Returns (inserted, skipped, truncated) where truncated is True when the
+    file held more than IMPORT_ROW_LIMIT data rows.
     """
     reader = csv.DictReader(io.StringIO(text))
     cats = {r["name"].lower(): r for r in db.execute("SELECT * FROM categories").fetchall()}
     users = {r["username"].lower(): r["id"] for r in
              db.execute("SELECT id, username FROM users").fetchall()}
     inserted, skipped = 0, 0
+    truncated = False
     for i, row in enumerate(reader, start=1):
         if i > IMPORT_ROW_LIMIT:
+            truncated = True
             break
         try:
             date_str = (row.get("date") or "").strip()
@@ -490,7 +548,7 @@ def import_csv(db, text, user_id=None):
             if code != base_currency() and code not in current_app.config.get("CURRENCY_RATES", {}):
                 raise ValueError
             orig = to_cents(amount_raw)
-            amount = int(round(orig * rate_to_base(code)))
+            amount = _base_cents(orig, rate_to_base(code))
             if amount <= 0 or ttype not in ("income", "expense") or not cat_name:
                 raise ValueError
             key = cat_name.lower()
@@ -500,7 +558,13 @@ def import_csv(db, text, user_id=None):
             cat = cats[key]
             if cat["type"] != ttype:
                 raise ValueError
-            owner_id = users.get((row.get("owner") or "").strip().lower(), user_id)
+            owner_raw = (row.get("owner") or "").strip()
+            if owner_raw:
+                owner_id = users.get(owner_raw.lower())
+                if owner_id is None:
+                    raise ValueError
+            else:
+                owner_id = user_id
             # NB: CSV has no receipt format — never trust a `receipt` column.
             db.execute(
                 "INSERT INTO transactions (amount,type,category_id,date,note,"
@@ -512,7 +576,7 @@ def import_csv(db, text, user_id=None):
         except (ValueError, KeyError) + DB_ERRORS:
             db.rollback()  # required to keep a Postgres connection usable
             skipped += 1
-    return inserted, skipped
+    return inserted, skipped, truncated
 
 
 def new_split_group():

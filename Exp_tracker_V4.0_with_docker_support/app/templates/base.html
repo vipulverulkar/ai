@@ -5,8 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Expense Tracker — track income, expenses, budgets and reports.">
   <meta name="theme-color" content="#1e1b4b">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Expenses">
   <title>{% block title %}Expense Tracker{% endblock %}</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💰</text></svg>">
+  <link rel="manifest" href="{{ url_for('manifest') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   <script>
     try {
@@ -32,12 +37,13 @@
       <div class="links">
         <a href="{{ url_for('dashboard.index') }}" class="{% if request.blueprint == 'dashboard' %}active{% endif %}">Dashboard</a>
         <div class="drop">
-          <a href="{{ url_for('transactions.index') }}" aria-haspopup="true" aria-expanded="false" class="{% if request.blueprint in ('transactions', 'recurring', 'budgets') %}active{% endif %}">Transactions <span class="caret">▾</span></a>
+          <a href="{{ url_for('transactions.index') }}" aria-haspopup="true" aria-expanded="false" class="{% if request.blueprint in ('transactions', 'recurring', 'budgets', 'bank_import') %}active{% endif %}">Transactions <span class="caret">▾</span></a>
           <div class="menu" role="menu">
             <div class="menu-inner">
             <a href="{{ url_for('transactions.index') }}" class="{% if request.blueprint == 'transactions' %}active{% endif %}">🧾 All transactions</a>
             <a href="{{ url_for('recurring.index') }}" class="{% if request.blueprint == 'recurring' %}active{% endif %}">🔁 Recurring</a>
             <a href="{{ url_for('budgets.index') }}" class="{% if request.blueprint == 'budgets' %}active{% endif %}">🎯 Budgets</a>
+            {% if is_admin %}<a href="{{ url_for('bank_import.index') }}" class="{% if request.blueprint == 'bank_import' %}active{% endif %}">🏦 Bank import</a>{% endif %}
             </div>
           </div>
         </div>
@@ -53,18 +59,21 @@
           </div>
         </div>
         <div class="drop">
-          <a href="{{ url_for('data.index') }}" aria-haspopup="true" aria-expanded="false" class="{% if request.blueprint in ('data', 'bank_import') or request.endpoint == 'auth.audit' %}active{% endif %}">Data <span class="caret">▾</span></a>
+          <a href="{{ url_for('data.index') }}" aria-haspopup="true" aria-expanded="false" class="{% if request.blueprint == 'data' or request.endpoint == 'auth.audit' %}active{% endif %}">Data <span class="caret">▾</span></a>
           <div class="menu" role="menu">
             <div class="menu-inner">
             <a href="{{ url_for('data.index') }}" class="{% if request.blueprint == 'data' %}active{% endif %}">💾 Backup &amp; restore</a>
-            <a href="{{ url_for('bank_import.index') }}" class="{% if request.blueprint == 'bank_import' %}active{% endif %}">🏦 Bank import</a>
             {% if is_admin %}<a href="{{ url_for('auth.audit') }}" class="{% if request.endpoint == 'auth.audit' %}active{% endif %}">🧾 Audit log</a>{% endif %}
             </div>
           </div>
         </div>
-        <a href="{{ url_for('auth.logout') }}">Logout</a>
+        <form method="post" action="{{ url_for('auth.logout') }}" style="display:inline;margin:0">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="link-btn">Logout</button>
+        </form>
       </div>
       <button class="theme-btn" id="theme-toggle" aria-label="Toggle dark mode">🌙</button>
+      <button class="theme-btn" id="fullscreen-toggle" aria-label="Toggle fullscreen (hide browser address bar)" title="Fullscreen — hides the browser address bar (Esc to exit)">⛶</button>
     </div>
   </div>
 </nav>

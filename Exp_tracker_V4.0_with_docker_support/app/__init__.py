@@ -38,7 +38,8 @@ logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("exptracker")
 
 csrf = CSRFProtect()
-limiter = Limiter(key_func=get_remote_address, default_limits=["200 per minute"])
+limiter = Limiter(key_func=get_remote_address,
+                  default_limits=[Config.RATELIMIT_DEFAULT])
 
 # Optional Prometheus metrics (guarded import — app works without the lib).
 try:
@@ -158,7 +159,10 @@ def _init_sessions(app):
             cache_dir = app.config.get("SESSION_FILE_DIR")
             os.makedirs(cache_dir, exist_ok=True)
             app.config["SESSION_TYPE"] = "cachelib"
-            app.config["SESSION_CACHELIB"] = FileSystemCache(cache_dir, threshold=500, mode=0o600)
+            app.config["SESSION_CACHELIB"] = FileSystemCache(
+                cache_dir,
+                threshold=int(app.config.get("SESSION_CACHE_THRESHOLD", 500) or 500),
+                mode=0o600)
         except ImportError:
             # cachelib not available (very old Flask-Session) — use legacy type.
             os.makedirs(app.config["SESSION_FILE_DIR"], exist_ok=True)
@@ -241,6 +245,26 @@ def _register_hooks(app):
                            db=db.engine), 200
         except Exception:  # noqa: BLE001
             return jsonify(status="error"), 500
+
+    @app.route("/manifest.webmanifest")
+    def manifest():
+        # Lets browsers launch the app standalone (no address bar) via
+        # "Install app" / "Add to Home screen" / shortcut "open as window".
+        return jsonify({
+            "name": "Expense Tracker",
+            "short_name": "Expenses",
+            "description": "Track income, expenses, budgets and reports.",
+            "start_url": "/",
+            "scope": "/",
+            "display": "standalone",
+            "background_color": "#1e1b4b",
+            "theme_color": "#1e1b4b",
+            "icons": [
+                {"src": url_for("static", filename="icon.svg"),
+                 "sizes": "any", "type": "image/svg+xml",
+                 "purpose": "any"},
+            ],
+        })
 
     if REQUEST_COUNTER is not None:
         @app.route("/metrics")

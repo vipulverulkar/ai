@@ -6,8 +6,11 @@ from . import bp, bp_v1, models
 
 
 def _summary_json():
-    data = models.summary(get_db(), request.args.get("month", ""),
-                          request.args.get("year", ""))
+    try:
+        data = models.summary(get_db(), request.args.get("month", ""),
+                              request.args.get("year", ""))
+    except models.InvalidPeriod as e:
+        return jsonify(error=str(e)), 400
     return jsonify(data)
 
 

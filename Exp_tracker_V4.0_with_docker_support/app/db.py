@@ -640,6 +640,48 @@ def _ensure_fts(conn):
             pass
 
 
+def _repair_fts(conn):
+    """Rebuild a corrupt SQLite FTS5 index (startup self-heal).
+
+    A damaged transactions_fts index turns every transaction UPDATE/DELETE
+    into a 500 ('database disk image is malformed') while plain reads keep
+    working — and PRAGMA integrity_check still reports 'ok', so this probes
+    the actual trigger write path with a rolled-back trial delete. The
+    rebuild only rewrites the derived FTS index; user data is untouched.
+    """
+    if conn.engine != "sqlite":
+        return
+    try:
+        row = conn.execute("SELECT id FROM transactions LIMIT 1").fetchone()
+    except DB_ERRORS:
+        return
+    if row is None:
+        return
+    try:
+        conn.execute("SAVEPOINT fts_health")
+        conn.execute("DELETE FROM transactions WHERE id=?", (row[0],))
+        conn.execute("ROLLBACK TO fts_health")
+        conn.execute("RELEASE fts_health")
+        return
+    except DB_ERRORS as e:
+        for stmt in ("ROLLBACK TO fts_health", "RELEASE fts_health"):
+            try:
+                conn.execute(stmt)
+            except DB_ERRORS:
+                pass
+        if "malformed" not in str(e).lower():
+            return
+    try:
+        conn.execute(
+            "INSERT INTO transactions_fts(transactions_fts) VALUES('rebuild')")
+        conn.commit()
+    except DB_ERRORS:
+        try:
+            conn.rollback()
+        except DB_ERRORS:
+            pass
+
+
 def _add_pg_tsv_column(conn):
     """Add the Postgres full-text column (PG 12+ generated column + GIN index).
 
@@ -720,6 +762,7 @@ def init_db(config):
     conn.executescript(PG_SCHEMA if conn.engine == "pg" else SQLITE_SCHEMA)
     _migrate(conn)
     _ensure_fts(conn)
+    _repair_fts(conn)
     from .modules.categories.models import seed_defaults
     seed_defaults(conn)
     if conn.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0:

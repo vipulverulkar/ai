@@ -18,8 +18,12 @@ def index():
             flash("That action requires an admin account.", "error")
             return redirect(url_for("budgets.index"))
         return _save(db)
+    from ...helpers import is_valid_month
     y, m = date.today().year, date.today().month
     month_str = request.args.get("month", f"{y}-{m:02d}")
+    if not is_valid_month(month_str):
+        flash(f"Invalid month '{month_str}' — showing the current month.", "error")
+        return redirect(url_for("budgets.index"))
     y, m = parse_month(month_str)
     month_str = f"{y}-{m:02d}"
     status = models.status(db, y, m)

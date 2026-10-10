@@ -722,9 +722,10 @@ def test_csv_import_with_owner(client):
             "SELECT id FROM users WHERE username='admin'").fetchone()[0]
         assert db.execute(
             "SELECT user_id FROM transactions WHERE note='csv-owned'").fetchone()[0] == analyst
-        # unknown owner falls back to the importer
+        # unknown owner is skipped (never silently misattributed)
         assert db.execute(
-            "SELECT user_id FROM transactions WHERE note='csv-ghost'").fetchone()[0] == admin
+            "SELECT COUNT(*) FROM transactions WHERE note='csv-ghost'").fetchone()[0] == 0
+        assert b"1 skipped" in r.data or b"skipped" in r.data
     # old 5-column CSVs still import fine (attributed to the importer)
     data = {"file": (io.BytesIO(
         b"date,type,category,amount,note\n"

@@ -124,11 +124,15 @@ def delete(db, cat_id):
 
 
 def usage_counts(db):
-    """{category_id: number_of_transactions}."""
+    """{category_id: number of live (non-trashed) transactions}."""
     return {r["category_id"]: r["cnt"] for r in db.execute(
-        "SELECT category_id, COUNT(*) AS cnt FROM transactions GROUP BY category_id").fetchall()}
+        "SELECT category_id, COUNT(*) AS cnt FROM transactions"
+        " WHERE deleted_at IS NULL GROUP BY category_id").fetchall()}
 
 
 def transaction_count(db, cat_id):
+    """Live (non-trashed) transactions in a category — trashed rows must not
+    block deleting a category (purge first only if live rows use it)."""
     return db.execute(
-        "SELECT COUNT(*) FROM transactions WHERE category_id=?", (cat_id,)).fetchone()[0]
+        "SELECT COUNT(*) FROM transactions WHERE category_id=? AND deleted_at IS NULL",
+        (cat_id,)).fetchone()[0]

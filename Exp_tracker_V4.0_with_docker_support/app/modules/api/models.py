@@ -14,13 +14,28 @@ TOTAL_SQL = """SELECT SUM(CASE WHEN t.type='income' THEN t.amount ELSE 0 END) AS
                WHERE t.deleted_at IS NULL AND {clause}"""
 
 
+class InvalidPeriod(ValueError):
+    """Raised when ?month=/?year= fail strict validation."""
+
+
 def _resolve_period(month, year):
-    """Return (label, clause, args) for ?month=YYYY-MM, ?year=YYYY, or current month."""
+    """Return (label, clause, args) for ?month=YYYY-MM, ?year=YYYY, or current month.
+
+    Raises InvalidPeriod on malformed values instead of silently falling
+    back — callers turn this into a 400. When both are given, month wins
+    (documented precedence).
+    """
+    from ...helpers import parse_month_strict
     if month:
-        y, m = parse_month(month)
+        try:
+            y, m = parse_month_strict(month)
+        except ValueError:
+            raise InvalidPeriod(f"Invalid month: {month!r} (use YYYY-MM).")
         s, e = month_bounds(y, m)
         return f"{y}-{m:02d}", "t.date>=? AND t.date<?", (s, e)
-    if year and year.isdigit():
+    if year:
+        if not year.isdigit() or not 1900 <= int(year) <= 2100:
+            raise InvalidPeriod(f"Invalid year: {year!r} (use YYYY).")
         return year, "substr(t.date,1,4)=?", (year,)
     today = date.today()
     s, e = month_bounds(today.year, today.month)

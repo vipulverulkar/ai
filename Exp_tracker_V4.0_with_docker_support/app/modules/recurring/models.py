@@ -2,11 +2,31 @@
 import calendar
 from datetime import date, datetime, timedelta
 
+from flask import current_app
+
+from ...config import RECURRING_MAX_CATCHUP as MAX_CATCHUP_ITERATIONS
 from ...db import DB_ERRORS
 from ...helpers import to_cents, from_cents
 
 FREQUENCIES = ("daily", "weekly", "monthly", "yearly")
-MAX_CATCHUP_ITERATIONS = 366  # safety cap when running due items
+
+
+def _max_catchup():
+    """Schedule-engine safety cap (runtime config, env default)."""
+    try:
+        return int(current_app.config.get(
+            "RECURRING_MAX_CATCHUP", MAX_CATCHUP_ITERATIONS)
+            or MAX_CATCHUP_ITERATIONS)
+    except (RuntimeError, ValueError, TypeError):
+        return MAX_CATCHUP_ITERATIONS
+
+
+def _base_currency():
+    """Base currency, falling back to INR outside an app context (tests)."""
+    try:
+        return current_app.config.get("BASE_CURRENCY", "INR")
+    except RuntimeError:
+        return "INR"
 
 
 def _advance(d, frequency, anchor=None):
@@ -66,12 +86,16 @@ def _row_out(r):
 
 
 def create(db, amount_cents, ttype, category_id, note, frequency, start,
-           user_id=None, currency=None, orig_amount=None, end_date=None):
+           user_id=None, currency=None, orig_amount=None, end_date=None,
+           first_run=None):
     from ..transactions import models as tx_models
     try:
         anchor = int(start[8:10])
     except (ValueError, TypeError, IndexError):
         anchor = None
+    # first_run is the working cursor (next_run_date); it defaults to the
+    # start date but callers pass today when the start is in the past so a
+    # new schedule never backfills a burst of old transactions.
     db.execute(
         """INSERT INTO recurring_transactions (user_id, amount, type, category_id, note,
            currency, orig_amount, frequency, next_run_date, start_date, end_date,
@@ -79,7 +103,7 @@ def create(db, amount_cents, ttype, category_id, note, frequency, start,
            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
         (user_id, amount_cents, ttype, category_id, note,
          currency or tx_models.base_currency(), orig_amount,
-         frequency, start, start, end_date, anchor))
+         frequency, first_run or start, start, end_date, anchor))
     db.commit()
 
 
@@ -196,8 +220,9 @@ def run_due(db, today):
     today_iso = today.isoformat()
     for r in rows:
         iterations = 0
+        cap = _max_catchup()
         anchor = _row_anchor(r)
-        while iterations < MAX_CATCHUP_ITERATIONS:
+        while iterations < cap:
             run_on = r["next_run_date"]
             end = r["end_date"] if "end_date" in r.keys() else None
             if run_on > today_iso or not r["category_id"]:
@@ -209,7 +234,8 @@ def run_due(db, today):
                    user_id, currency, orig_amount) VALUES (?,?,?,?,?,?,?,?)""",
                 (r["amount"], r["type"], r["category_id"], run_on,
                  r["note"] or "", r["user_id"],
-                 r["currency"] if "currency" in r.keys() and r["currency"] else "INR",
+                 (r["currency"] if "currency" in r.keys() and r["currency"]
+                  else _base_currency()),
                  r["orig_amount"] if "orig_amount" in r.keys() else None))
             db.execute(
                 "UPDATE recurring_transactions SET next_run_date=?, last_run_at=? WHERE id=?",
@@ -221,7 +247,7 @@ def run_due(db, today):
             # refresh the row so the while-loop condition uses the new date
             r = db.execute("SELECT * FROM recurring_transactions WHERE id=?", (r["id"],)).fetchone()
         # skip runaway schedules (e.g. daily recurrence abandoned for years)
-        if iterations >= MAX_CATCHUP_ITERATIONS and r["next_run_date"] <= today_iso:
+        if iterations >= cap and r["next_run_date"] <= today_iso:
             db.execute("UPDATE recurring_transactions SET active=0 WHERE id=?", (r["id"],))
             capped += 1
         r = db.execute("SELECT * FROM recurring_transactions WHERE id=?", (r["id"],)).fetchone()

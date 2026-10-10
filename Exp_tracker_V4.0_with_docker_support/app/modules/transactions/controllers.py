@@ -8,6 +8,9 @@ from werkzeug.utils import secure_filename
 
 from flask import Response, flash, g, redirect, render_template, request, session, url_for, current_app
 
+from ...config import RECEIPT_ALLOWED_EXTS as ALLOWED_RECEIPT_EXTS
+from ...config import RECEIPT_MAX_BYTES as MAX_RECEIPT_BYTES
+from ...config import TRANSACTIONS_PER_PAGE_DEFAULT as _TX_PER_PAGE_FALLBACK
 from ...db import get_db, log_action
 from ..auth import models as auth_models
 from ..auth.controllers import admin_required
@@ -32,31 +35,56 @@ def _month_options(selected="", n=12):
             m, y = 12, y - 1
     opts.reverse()
     if selected and selected not in dict(opts):
-        match = models.parse_month(selected)  # validates the format
-        opts.insert(0, (selected,
-                        f"{calendar.month_name[match[1]]} {match[0]}"))
+        try:
+            from ...helpers import parse_month_strict
+            yy, mm = parse_month_strict(selected)
+            opts.insert(0, (selected, f"{calendar.month_name[mm]} {yy}"))
+        except (ValueError, TypeError):
+            # Invalid values are redirected away by index(); labelling the
+            # raw value avoids ever showing a mismatched month name.
+            opts.insert(0, (selected, selected))
     return opts
 
 
-ALLOWED_RECEIPT_EXTS = {"png", "jpg", "jpeg", "gif", "pdf", "webp"}
-MAX_RECEIPT_BYTES = 5 * 1024 * 1024
+def _receipt_exts():
+    """Allowed receipt extensions (runtime config, env default)."""
+    try:
+        exts = current_app.config.get("RECEIPT_ALLOWED_EXTS", ALLOWED_RECEIPT_EXTS)
+        return tuple(exts) or ALLOWED_RECEIPT_EXTS
+    except RuntimeError:
+        return ALLOWED_RECEIPT_EXTS
+
+
+def _receipt_max_bytes():
+    """Max receipt size in bytes (runtime config, env default)."""
+    try:
+        return int(current_app.config.get("RECEIPT_MAX_BYTES", MAX_RECEIPT_BYTES)
+                   or MAX_RECEIPT_BYTES)
+    except (RuntimeError, ValueError, TypeError):
+        return MAX_RECEIPT_BYTES
+
+
+def _receipt_mb_label():
+    from ...helpers import format_bytes
+    return format_bytes(_receipt_max_bytes())
 
 
 def _save_receipt(receipt_file):
     """Validate and store an uploaded receipt. Returns rel_path or (None, err)."""
     import uuid
+    exts = _receipt_exts()
     filename = secure_filename(receipt_file.filename or "")
     if not filename or "." not in filename:
         return None, "Receipt must be an image or PDF file."
     ext = filename.rsplit(".", 1)[-1].lower()
-    if ext not in ALLOWED_RECEIPT_EXTS:
-        return None, "Receipt must be one of: PNG, JPG, GIF, PDF, WEBP."
+    if ext not in exts:
+        return None, f"Receipt must be one of: {', '.join(e.upper() for e in exts)}."
     # Enforce a per-file size cap (app has no global MAX_CONTENT_LENGTH).
     receipt_file.seek(0, os.SEEK_END)
     size = receipt_file.tell()
     receipt_file.seek(0)
-    if size > MAX_RECEIPT_BYTES:
-        return None, "Receipt file is too large (max 5 MB)."
+    if size > _receipt_max_bytes():
+        return None, f"Receipt file is too large (max {_receipt_mb_label()})."
     if size == 0:
         return None, "Receipt file is empty."
     safe = f"{uuid.uuid4().hex[:12]}_{filename}"
@@ -65,6 +93,22 @@ def _save_receipt(receipt_file):
     os.makedirs(os.path.dirname(abs_path), exist_ok=True)
     receipt_file.save(abs_path)
     return rel_path, None
+
+
+def _delete_receipt_file(rel_path):
+    """Best-effort removal of a stored receipt (purge/replace cleanup)."""
+    if not rel_path:
+        return
+    try:
+        # Only ever delete inside our own receipts dir (no path traversal).
+        base = os.path.realpath(os.path.join(current_app.root_path, "static", "receipts"))
+        target = os.path.realpath(os.path.join(current_app.root_path, rel_path))
+        if os.path.commonpath([base, target]) != base:
+            return
+        if os.path.isfile(target):
+            os.remove(target)
+    except Exception:  # noqa: BLE001 — cleanup must never break the request
+        pass
 
 
 def _filter_args(db):
@@ -87,7 +131,17 @@ def index():
     # csrf_token) so the address bar shows /transactions instead of a long
     # ?type=all&category=all&... query string. Deep links with real filters
     # are preserved untouched.
-    from ...helpers import canonical_clean_args
+    from ...helpers import canonical_clean_args, is_valid_month
+    raw_month = request.args.get("month", "")
+    if raw_month and not is_valid_month(raw_month):
+        flash(f"Invalid month '{raw_month}' — showing all months.", "error")
+        args = {k: v for k, v in request.args.items() if k != "month"}
+        cleaned = canonical_clean_args(args, {
+            "type": "all", "category": "all", "owner": "all", "month": "",
+            "q": "", "sort": "date", "order": "desc",
+            "per_page": "10", "page": "1",
+        })
+        return redirect(url_for("transactions.index", **(cleaned or {})))
     cleaned = canonical_clean_args(request.args, {
         "type": "all", "category": "all", "owner": "all", "month": "",
         "q": "", "sort": "date", "order": "desc",
@@ -101,11 +155,16 @@ def index():
     f_type, f_category, f_owner, f_month, f_search, sort, order, where, args, order_sql = _filter_args(db)
 
     try:
-        per_page = int(request.args.get("per_page", 10))
+        default_pp = int(current_app.config.get(
+            "TRANSACTIONS_PER_PAGE_DEFAULT", _TX_PER_PAGE_FALLBACK))
     except (ValueError, TypeError):
-        per_page = 10
+        default_pp = _TX_PER_PAGE_FALLBACK
+    try:
+        per_page = int(request.args.get("per_page", default_pp))
+    except (ValueError, TypeError):
+        per_page = default_pp
     if per_page not in models.PER_PAGE_CHOICES:
-        per_page = 10
+        per_page = default_pp
 
     total = models.count_filtered(db, where, args)
     filt_income, filt_expense, filt_saved = models.sums_filtered(db, where, args)
@@ -147,6 +206,7 @@ def export():
     db = get_db()
     _, _, _, _, _, _, _, where, args, order_sql = _filter_args(db)
     rows = models.export_rows(db, where, args, order_sql)
+    from ...helpers import safe_sheet_value
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(["id", "date", "type", "category", "amount", "note", "owner",
@@ -155,9 +215,10 @@ def export():
         orig = ""
         if r["currency"] and r["currency"] != models.base_currency() and r["orig_amount"]:
             orig = f"{models.from_cents(r['orig_amount']):.2f}"
-        w.writerow([r["id"], r["date"], r["type"], r["category"],
+        w.writerow([r["id"], r["date"], r["type"], safe_sheet_value(r["category"]),
                     f"{models.from_cents(r['amount']):.2f}",
-                    r["note"] or "", r["owner"] or "", r["currency"] or "", orig])
+                    safe_sheet_value(r["note"] or ""), safe_sheet_value(r["owner"] or ""),
+                    r["currency"] or "", orig])
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     return Response(buf.getvalue(), mimetype="text/csv",
                     headers={"Content-Disposition": f"attachment; filename=expenses-{stamp}.csv"})
@@ -176,12 +237,15 @@ def import_csv():
         flash("Could not read CSV file.", "error")
         return redirect(url_for("transactions.index"))
     db = get_db()
-    inserted, skipped = models.import_csv(
+    inserted, skipped, truncated = models.import_csv(
         db, text, models.recorded_by(db, session.get("user", "")))
+    trunc_note = (f" File holds more than {models.IMPORT_ROW_LIMIT} rows — "
+                  f"only the first {models.IMPORT_ROW_LIMIT} were processed."
+                  if truncated else "")
     if inserted:
-        flash(f"Imported {inserted} transaction(s){f' ({skipped} skipped)' if skipped else ''}.", "success")
+        flash(f"Imported {inserted} transaction(s){f' ({skipped} skipped)' if skipped else ''}.{trunc_note}", "success")
     else:
-        flash(f"No rows imported ({skipped} skipped). Check CSV format: required columns date,type,category,amount with optional note,owner,currency.", "error")
+        flash(f"No rows imported ({skipped} skipped). Check CSV format: required columns date,type,category,amount with optional note,owner,currency.{trunc_note}", "error")
     return redirect(url_for("transactions.index"))
 
 
@@ -271,10 +335,24 @@ def add():
         if orig is not None:
             # Split the original-currency amount proportionally so each
             # line keeps an auditable orig value that sums to the total.
+            from decimal import Decimal, ROUND_HALF_UP
             rate = models.rate_to_base(code)
-            orig_lines = [int(round(a / rate)) for _, a in all_lines]
+            rate_d = Decimal(str(rate))
+            orig_lines = [max(1, int((Decimal(a) / rate_d)
+                                     .to_integral_value(rounding=ROUND_HALF_UP)))
+                          for _, a in all_lines]
             drift = orig - sum(orig_lines)
-            orig_lines[0] += drift
+            # Fold rounding drift into the largest line so every line keeps
+            # a positive orig value and the total still reconciles.
+            biggest = max(range(len(orig_lines)),
+                          key=lambda i: all_lines[i][1])
+            orig_lines[biggest] += drift
+            if orig_lines[biggest] <= 0:
+                # Micro-amounts that can't be represented per-line in this
+                # currency — refuse rather than store zero/negative values.
+                flash("Split amounts are too small to represent in "
+                      f"{code}. Use fewer lines or a larger amount.", "error")
+                return redirect(url_for("dashboard.index"))
         else:
             orig_lines = [None] * len(all_lines)
         for (cat_id, line_amount), line_orig in zip(all_lines, orig_lines):
@@ -324,7 +402,21 @@ def edit(tx_id):
             if rerr:
                 flash(rerr, "error")
                 return redirect(url_for("transactions.edit", tx_id=tx_id))
+            old_path = receipt_path
             receipt_path = saved
+            # Replace succeeded — remove the orphaned previous file.
+            if old_path and old_path != saved:
+                _delete_receipt_file(old_path)
+
+        # A split line must keep its group's type: flipping one line's type
+        # would leave the group mixing income and expense.
+        if tx["split_group"]:
+            siblings = models.by_group(db, tx["split_group"])
+            other_types = {r["type"] for r in siblings if r["id"] != tx_id}
+            if other_types and ttype not in other_types:
+                _delete_receipt_file(receipt_path if receipt_path != tx["receipt_path"] else None)
+                flash("A split line must keep its group's type — edit the whole split instead.", "error")
+                return redirect(url_for("transactions.edit", tx_id=tx_id))
 
         models.update(db, tx_id, base, ttype, cat["id"], date_str, note,
                       owner_id, currency=code, orig_amount=orig, receipt_path=receipt_path)
@@ -338,7 +430,12 @@ def edit(tx_id):
 @bp.route("/duplicate/<int:tx_id>", methods=["POST"])
 @admin_required
 def duplicate(tx_id):
-    if models.duplicate(get_db(), tx_id) is None:
+    db = get_db()
+    row = db.execute("SELECT deleted_at FROM transactions WHERE id=?", (tx_id,)).fetchone()
+    if row is not None and row["deleted_at"] is not None:
+        flash("That transaction is in trash — restore it first.", "error")
+        return redirect(url_for("transactions.trash"))
+    if models.duplicate(db, tx_id) is None:
         flash("Transaction not found.", "error")
         return redirect(url_for("transactions.index"))
     flash("Transaction duplicated for today.", "success")
@@ -379,7 +476,10 @@ def trash():
 @bp.route("/trash/<int:tx_id>/restore", methods=["POST"])
 @admin_required
 def trash_restore(tx_id):
-    if models.restore(get_db(), tx_id):
+    result = models.restore(get_db(), tx_id)
+    if result == "no_category":
+        flash("Cannot restore — its category was deleted. Purge it or recreate the category first.", "error")
+    elif result:
         flash("Transaction restored.", "success")
     else:
         flash("Transaction not found in trash.", "error")
@@ -390,8 +490,10 @@ def trash_restore(tx_id):
 @admin_required
 def trash_purge(tx_id):
     db = get_db()
-    log_action(db, session.get("user"), "purge_transaction", "transactions", tx_id)
-    if models.purge(db, tx_id):
+    removed = models.purge(db, tx_id)
+    if removed:
+        _delete_receipt_file(removed if isinstance(removed, str) else None)
+        log_action(db, session.get("user"), "purge_transaction", "transactions", tx_id)
         flash("Transaction permanently deleted.", "success")
     else:
         flash("Transaction not found in trash.", "error")
@@ -408,16 +510,19 @@ def split_view(group):
         flash("Split not found (it may have been deleted).", "error")
         return redirect(url_for("transactions.index"))
     total = sum(r["amount"] for r in rows)
+    types = {r["type"] for r in rows}
+    mixed = len(types) > 1
     return render_template("transactions/split.html", rows=rows, group=group,
-                           total=total)
+                           total=total, mixed_types=mixed)
 
 
 @bp.route("/transactions/split/<group>/delete", methods=["POST"])
 @admin_required
 def split_delete(group):
-    n = models.delete_group(get_db(), group)
+    db = get_db()
+    n = models.delete_group(db, group)
     if n:
-        log_action(get_db(), session.get("user"), "soft_delete_split", "transactions",
+        log_action(db, session.get("user"), "soft_delete_split", "transactions",
                    None, f"group {group}, {n} row(s)")
         flash(f"Moved {n} split line(s) to trash.", "success")
     else:

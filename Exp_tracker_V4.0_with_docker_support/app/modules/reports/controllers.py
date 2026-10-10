@@ -11,7 +11,23 @@ from . import bp, models
 
 @bp.route("/reports")
 def index():
-    from ...helpers import canonical_clean_args
+    from ...helpers import canonical_clean_args, is_valid_month
+    view = request.args.get("view", "daily")
+    if view not in ("daily", "monthly", "budgets", "forecast"):
+        flash(f"Unknown report view '{view}' — showing daily.", "error")
+        return redirect(url_for("reports.index"))
+    raw_month = request.args.get("month", "")
+    if raw_month and not is_valid_month(raw_month):
+        flash(f"Invalid month '{raw_month}' — showing the current month.", "error")
+        keep = {k: v for k, v in request.args.items() if k != "month"}
+        cleaned = canonical_clean_args(keep, {"view": "daily", "month": "", "year": ""})
+        return redirect(url_for("reports.index", **(cleaned or {})))
+    raw_year = request.args.get("year", "")
+    if raw_year and (not raw_year.isdigit() or not 1900 <= int(raw_year) <= 2100):
+        flash(f"Invalid year '{raw_year}' — showing the current year.", "error")
+        keep = {k: v for k, v in request.args.items() if k != "year"}
+        cleaned = canonical_clean_args(keep, {"view": "daily", "month": "", "year": ""})
+        return redirect(url_for("reports.index", **(cleaned or {})))
     cleaned = canonical_clean_args(request.args, {
         "view": "daily", "month": "", "year": "",
     })
@@ -21,7 +37,6 @@ def index():
         # dropped view=daily clutter.
         return redirect(url_for("reports.index", **cleaned))
     db = get_db()
-    view = request.args.get("view", "daily")
     today = date.today()
     if view == "monthly":
         return _monthly(db, today)
@@ -93,39 +108,65 @@ def _forecast(db):
 @bp.route("/reports/export-xlsx")
 def export_xlsx():
     """Export the current report view as an Excel file."""
+    from ...helpers import is_valid_month
     db = get_db()
     today = date.today()
     view = request.args.get("view", "daily")
-    
+    if view not in ("daily", "monthly", "budgets", "forecast"):
+        flash(f"Unknown report view '{view}'.", "error")
+        return redirect(url_for("reports.index"))
+
     if view == "monthly":
-        try:
-            year = int(request.args.get("year", str(today.year)))
-        except ValueError:
-            year = today.year
+        raw_year = request.args.get("year", str(today.year))
+        if not raw_year.isdigit() or not 1900 <= int(raw_year) <= 2100:
+            flash(f"Invalid year '{raw_year}'.", "error")
+            return redirect(url_for("reports.index", view="monthly"))
+        year = int(raw_year)
         rows = models.monthly(db, year)
         period = f"Year {year}"
         df = pd.DataFrame(rows)
         cat_rows = models.category_totals_for_year(db, year)
         df_cats = pd.DataFrame(cat_rows)
+        sheet = "Monthly"
     elif view == "budgets":
         month_str = request.args.get("month", today.strftime("%Y-%m"))
+        if not is_valid_month(month_str):
+            flash(f"Invalid month '{month_str}'.", "error")
+            return redirect(url_for("reports.index", view="budgets"))
         y, m = parse_month(month_str)
+        month_str = f"{y}-{m:02d}"
         rows = models.budget_variance(db, y, m)
         period = f"Budget Variance {month_str}"
         df = pd.DataFrame(rows)
         df_cats = pd.DataFrame()
+        sheet = "Budgets"
+    elif view == "forecast":
+        data = models.forecast(db)
+        period = "Forecast next 3 months"
+        df = pd.DataFrame(data.get("months", []))
+        df_cats = pd.DataFrame()
+        sheet = "Forecast"
     else: # daily
         month_str = request.args.get("month", today.strftime("%Y-%m"))
+        if not is_valid_month(month_str):
+            flash(f"Invalid month '{month_str}'.", "error")
+            return redirect(url_for("reports.index"))
         y, m = parse_month(month_str)
+        month_str = f"{y}-{m:02d}"
         rows = models.daily(db, y, m)
         period = f"Month {month_str}"
         df = pd.DataFrame(rows)
         cat_rows = models.category_totals_for_month(db, y, m)
         df_cats = pd.DataFrame(cat_rows)
+        sheet = "Daily"
 
     buf = io.BytesIO()
+    from ...helpers import safe_sheet_value
+    for _df in (df, df_cats):
+        for _col in _df.select_dtypes(include=["object"]).columns:
+            _df[_col] = _df[_col].map(safe_sheet_value)
     with pd.ExcelWriter(buf, engine='openpyxl') as writer:
-        df.to_excel(writer, sheet_name='Summary', index=False)
+        df.to_excel(writer, sheet_name=sheet, index=False)
         if not df_cats.empty:
             df_cats.to_excel(writer, sheet_name='Categories', index=False)
     
@@ -138,7 +179,18 @@ def export_xlsx():
 
 @bp.route("/reports/export-pdf")
 def export_pdf():
-    """PDF summary of a month (or year) — requires reportlab."""
+    """PDF summary of a report view — requires reportlab."""
+    from ...helpers import is_valid_month
+    view = request.args.get("view", "daily")
+    month_arg = request.args.get("month", "")
+    year_arg = request.args.get("year", "")
+    ctx = {}
+    if view in ("daily", "budgets") and month_arg:
+        ctx["month"] = month_arg
+    if view == "monthly" and year_arg:
+        ctx["year"] = year_arg
+    if view not in ("daily", "monthly"):
+        ctx["view"] = view
     try:
         from reportlab.lib import colors
         from reportlab.lib.pagesizes import A4
@@ -147,16 +199,19 @@ def export_pdf():
         from reportlab.lib.styles import getSampleStyleSheet
     except ImportError:
         flash("PDF export needs the reportlab package (pip install reportlab).", "error")
-        return redirect(url_for("reports.index"))
+        return redirect(url_for("reports.index", **ctx))
 
     db = get_db()
     today = date.today()
-    view = request.args.get("view", "daily")
+    if view not in ("daily", "monthly", "budgets", "forecast"):
+        flash(f"Unknown report view '{view}'.", "error")
+        return redirect(url_for("reports.index"))
     if view == "monthly":
-        try:
-            year = int(request.args.get("year", str(today.year)))
-        except ValueError:
-            year = today.year
+        raw_year = request.args.get("year", str(today.year))
+        if not raw_year.isdigit() or not 1900 <= int(raw_year) <= 2100:
+            flash(f"Invalid year '{raw_year}'.", "error")
+            return redirect(url_for("reports.index", view="monthly"))
+        year = int(raw_year)
         rows = models.monthly(db, year)
         period = f"Year {year}"
         table_head = ["Month", "Income", "Expense", "Savings"]
@@ -165,11 +220,40 @@ def export_pdf():
         tot_inc = sum(r["income"] for r in rows)
         tot_exp = sum(r["expense"] for r in rows)
         cat_rows = models.category_totals_for_year(db, year)
+    elif view == "budgets":
+        month_str = request.args.get("month", today.strftime("%Y-%m"))
+        if not is_valid_month(month_str):
+            flash(f"Invalid month '{month_str}'.", "error")
+            return redirect(url_for("reports.index", view="budgets"))
+        y, m = parse_month(month_str)
+        month_str = f"{y}-{m:02d}"
+        rows = models.budget_variance(db, y, m)
+        period = f"Budget Variance {month_str}"
+        table_head = ["Category", "Budget", "Actual", "Variance"]
+        table_rows = [[r["name"], f"{r['limit']:,.2f}", f"{r['spent']:,.2f}",
+                       f"{r['variance']:,.2f}"] for r in rows]
+        tot_inc = sum(r["limit"] for r in rows)
+        tot_exp = sum(r["spent"] for r in rows)
+        cat_rows = []
+    elif view == "forecast":
+        data = models.forecast(db)
+        period = "Forecast next 3 months"
+        table_head = ["Month", "Income", "Expense", "Net", "Balance"]
+        table_rows = [[mth["month"], f"{mth['income']:,.2f}", f"{mth['expense']:,.2f}",
+                       f"{mth['net']:,.2f}", f"{mth['projected_balance']:,.2f}"]
+                      for mth in data.get("months", [])]
+        tot_inc = sum(mth["income"] for mth in data.get("months", []))
+        tot_exp = sum(mth["expense"] for mth in data.get("months", []))
+        cat_rows = []
     else:
         month_str = request.args.get("month", today.strftime("%Y-%m"))
+        if not is_valid_month(month_str):
+            flash(f"Invalid month '{month_str}'.", "error")
+            return redirect(url_for("reports.index"))
         y, m = parse_month(month_str)
+        month_str = f"{y}-{m:02d}"
         rows = models.daily(db, y, m)
-        period = f"Month {y}-{m:02d}"
+        period = f"Month {month_str}"
         table_head = ["Date", "Income", "Expense", "Savings"]
         table_rows = [[r["date"], f"{r['income']:,.2f}", f"{r['expense']:,.2f}",
                        f"{r['savings']:,.2f}"] for r in rows]

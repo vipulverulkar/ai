@@ -15,13 +15,13 @@ from datetime import datetime, timezone
 
 from flask import current_app
 
+from ...config import CSV_IMPORT_ROW_LIMIT as ROW_LIMIT
+from ...config import MAX_TIMEOUT_MINUTES, MIN_TIMEOUT_MINUTES
 from ...db import DB_ERRORS
 from ...helpers import to_cents, from_cents
 from ..budgets import models as budget_models
 from ..categories import models as category_models
 from ..transactions import models as transaction_models
-
-ROW_LIMIT = 2000
 
 BACKUP_VERSION = 1
 BACKUP_TABLES = ("categories", "budgets", "transactions", "users", "recurring_transactions")
@@ -110,7 +110,8 @@ def import_transactions(db, text, user_id=None):
     """CSV columns: date (YYYY-MM-DD, required), type (income|expense, required), category (text, required), amount (number > 0 rupees, required), note (text ≤200, optional), owner (username, optional), currency (3-letter code, optional, default INR).
 
     Delegates to the transactions module (unknown categories auto-created,
-    rows attributed to the named owner or user_id).
+    unknown named owners skipped, rows attributed to the named owner or user_id).
+    Returns (imported, skipped, truncated).
     """
     return transaction_models.import_csv(db, text, user_id)
 
@@ -220,10 +221,14 @@ def summarize_csv_results(results):
     """'2 categories, 1 budget, 4 transactions' + skipped-row note."""
     parts = []
     skipped = 0
+    truncated = False
     for key, label in (("categories", "categories"), ("budgets", "budgets"),
                        ("transactions", "transactions")):
-        imported, skip = results.get(key, (0, 0))
+        res = results.get(key, (0, 0))
+        imported, skip = res[0], res[1]
         skipped += skip
+        if len(res) > 2 and res[2]:
+            truncated = True
         if imported:
             parts.append(f"{imported} {label}")
     if results.get("defaults_reseeded"):
@@ -231,6 +236,10 @@ def summarize_csv_results(results):
     summary = ", ".join(parts) or "0 rows"
     if skipped:
         summary += f" ({skipped} row(s) skipped)"
+    if truncated:
+        summary += (f" — file held more than "
+                    f"{transaction_models.IMPORT_ROW_LIMIT} rows; only the first "
+                    f"{transaction_models.IMPORT_ROW_LIMIT} were processed")
     return summary
 
 
@@ -285,11 +294,11 @@ def _opt_timeout(row, label="user"):
         minutes = int(value)
     except (ValueError, TypeError):
         raise ValueError(
-            f"{label}: session timeout must be 1–1440 minutes "
+            f"{label}: session timeout must be {MIN_TIMEOUT_MINUTES}–{MAX_TIMEOUT_MINUTES} minutes "
             f"(got {value!r}).")
-    if not 1 <= minutes <= 1440:
+    if not MIN_TIMEOUT_MINUTES <= minutes <= MAX_TIMEOUT_MINUTES:
         raise ValueError(
-            f"{label}: session timeout must be 1–1440 minutes "
+            f"{label}: session timeout must be {MIN_TIMEOUT_MINUTES}–{MAX_TIMEOUT_MINUTES} minutes "
             f"(got {minutes}).")
     return minutes
 

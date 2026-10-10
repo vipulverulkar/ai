@@ -23,7 +23,7 @@
   <form method="post" action="{{ url_for('bank_import.map_columns') }}" enctype="multipart/form-data">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     {% if is_admin %}
-    <label>CSV file (max 2 MB)
+    <label>CSV file (max {{ max_label }})
       <input type="file" name="file" accept=".csv" {% if not staged %}required{% endif %}>
     </label>
     {% if staged %}

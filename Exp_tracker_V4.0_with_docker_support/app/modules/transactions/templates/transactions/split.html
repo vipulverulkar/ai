@@ -6,8 +6,7 @@
   <div>
     <h1>✂ Split transaction</h1>
     <p class="sub">Group {{ group }} · {{ rows|length }} line(s) · total {{ currency }}{{ (total|money) }}</p>
-  </div>
-  <div class="head-actions">
+  </div>  <div class="head-actions">
     {% if is_admin %}
     <form method="post" action="{{ url_for('transactions.split_delete', group=group) }}"
           onsubmit="return confirm('Move all lines of this split to trash?')">
@@ -20,12 +19,16 @@
 </div>
 
 <section class="panel">
+  {% if mixed_types %}
+  <p class="flash error" style="margin:0 0 12px">⚠ This split mixes income and expense lines (legacy data) — per-line types are shown below; the group total mixes both.</p>
+  {% endif %}
   <div class="table-wrap"><table>
-    <thead><tr><th>Date</th><th>Category</th><th>For</th><th>Note</th><th class="num">Amount</th><th>Actions</th></tr></thead>
+    <thead><tr><th>Date</th><th>Type</th><th>Category</th><th>For</th><th>Note</th><th class="num">Amount</th><th>Actions</th></tr></thead>
     <tbody>
     {% for t in rows %}
       <tr>
         <td style="white-space:nowrap">{{ t['date'] }}</td>
+        <td><span class="badge {{ t['type'] }}">{{ t['type'] }}</span></td>
         <td class="cat-name">{{ t['category_name'] }}</td>
         <td>{% if t['owner_name'] %}{{ t['owner_name'] }}{% else %}<span style="color:var(--muted)">—</span>{% endif %}</td>
         <td class="note-cell">{{ t['note'] or '—' }}</td>

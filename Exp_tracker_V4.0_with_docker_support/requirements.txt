@@ -1,11 +1,23 @@
+# Core
 flask>=3.0,<3.2
 gunicorn>=22.0
 psycopg[binary]>=3.1  # only used for the Postgres backend (DB_TYPE=postgres)
+
+# Forms, rate limiting, server-side sessions
 flask-wtf>=1.2
 flask-limiter>=3.0
-flask-session>=0.8    # server-side (filesystem) sessions; guarded import
+flask-session>=0.8    # server-side sessions; guarded import
+cachelib>=0.9         # FileSystemCache backend used directly in app/__init__.py (also a Flask-Session dependency)
+
+# Report / data features
+pandas>=2.0           # Excel (.xlsx) report export — top-level import in reports/controllers.py, app fails to start without it
+openpyxl>=3.1         # Excel writer engine used via pandas
 pyotp>=2.8            # TOTP two-factor auth; guarded import
 reportlab>=4.0        # PDF report export; guarded import
+
+# Observability (guarded imports — app runs fine without them)
 prometheus-client>=0.20  # optional /metrics endpoint (guarded import)
 sentry-sdk>=2.0          # optional error tracking, active when SENTRY_DSN is set
+
+# Tests
 pytest>=8.0

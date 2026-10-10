@@ -10,16 +10,18 @@ app with dark mode, charts, multi-currency, recurring transactions and roles.
 **Money management**
 - **Dashboard** — balance, monthly stats, savings rate, 6-month trend, top spending, recent activity, budget alerts
 - **Savings buckets** — flag any expense category as 🏦 savings (a `Savings` bucket is seeded); parked money is excluded from spending totals and the savings rate, and shown as Saved instead — across the dashboard, reports, API and CSV totals. Savings buckets can't carry budgets
-- **Transactions** — filter (type / category / user / month dropdown / full-text note search), sort, paginate, edit, duplicate; guided bulk actions (delete to Trash with confirm, or re-categorize) via row checkboxes; every entry records who it is managed for
+- **Transactions** — filter (type / category / user / month dropdown / full-text note search), sort, paginate, edit, duplicate; receipt attachments (image/PDF, max 5 MB); guided bulk actions (delete to Trash with confirm, or re-categorize) via row checkboxes; every entry records who it is managed for
 - **Recurring** — daily / weekly / monthly / yearly schedules with a start date and optional end date (rent, salary, subscriptions); due items are generated automatically on dashboard load, finished schedules show as ended
 - **Multi-currency** — log amounts in USD, EUR, GBP and more; stored converted to the base currency with the original amount kept; optional daily FX refresh
 - **Split transactions** — one expense spread over up to 3 extra categories, linked as a group so reports stay accurate
 - **Budgets** — monthly limits per category with progress bars and over-budget alerts
-- **Reports** — daily and monthly charts, budget-vs-actual variance, 3-month cash-flow forecast, PDF export
+- **Reports** — daily and monthly charts, budget-vs-actual variance, 3-month cash-flow forecast, PDF + Excel (`.xlsx`) export
 - **Trash** — deleted transactions are kept (soft delete) with restore / permanent purge
+- **Nav extras** — dark/light theme toggle (persisted, respects OS preference) and fullscreen toggle (`⛶`); installable PWA manifest (`/manifest.webmanifest`, standalone display)
 
 **Data**
 - **Import & export** — CSV export (respects filters, includes currency) and import (additive — never deletes)
+- **Bank statement import** (admin) — guided upload → column mapping → preview → import flow for bank CSVs (2 MB / 2000-row caps, 8-row preview, staging in server-side session, saved column-mapping templates)
 - **Backup & restore** — SQL-dump backup of the whole database; restore from `.sql`, legacy `.json`, or CSV files (validated first — invalid files change nothing); optional automatic startup backups with rotation
 
 **Accounts & security**
@@ -33,7 +35,7 @@ app with dark mode, charts, multi-currency, recurring transactions and roles.
 ## Quickstart
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements.txt   # includes pandas + openpyxl (Excel export), cachelib (sessions), reportlab (PDF), pyotp (2FA)
 python seed_demo.py  # optional demo data (~130 transactions + budgets)
 python run.py        # open http://127.0.0.1:5000
 ```
@@ -117,6 +119,25 @@ docker run --rm -v exptracker-data:/data -v "$PWD":/backup busybox tar xzf /back
 | `BACKUP_DIR` / `BACKUP_KEEP` | `backups/` / `10` | Auto-backup location and rotation count |
 | `AUDIT_RETENTION_DAYS` | `0` (keep all) | Purge audit entries older than N days on startup |
 | `RATELIMIT_STORAGE_URI` | `memory://` | Rate-limit store; use `redis://…` for multi-worker deployments |
+| `RATELIMIT_DEFAULT` | `200 per minute` | Request rate limit (Flask-Limiter format) |
+| `SESSION_CACHE_THRESHOLD` | `500` | Server-side session cache size (entries) |
+| `TOTP_PENDING_TTL_SECONDS` | `600` | 2FA half-session lifetime (seconds) |
+| `MIN_TIMEOUT_MINUTES` / `MAX_TIMEOUT_MINUTES` | `1` / `1440` | Per-user idle-timeout override bounds |
+| `MIN_USERNAME_LEN` / `MAX_USERNAME_LEN` | `3` / `32` | Username length policy |
+| `MIN_PASSWORD_LEN` | `8` | Password minimum length (letters + digits still required) |
+| `DEFAULT_USERNAME` / `DEFAULT_PASSWORD` | `admin` / `admin` | First-boot seed account (only when users table is empty) |
+| `CSV_IMPORT_ROW_LIMIT` | `2000` | Max rows per CSV/bank import |
+| `BANK_IMPORT_MAX_BYTES` | `2097152` | Max bank CSV upload (bytes) |
+| `BANK_IMPORT_ROW_LIMIT` | `2000` | Max bank CSV rows per import |
+| `BANK_IMPORT_PREVIEW_ROWS` | `8` | Bank import preview sample size |
+| `RECEIPT_MAX_BYTES` | `5242880` | Max receipt file size (bytes) |
+| `RECEIPT_ALLOWED_EXTS` | `png,jpg,jpeg,gif,pdf,webp` | Allowed receipt extensions |
+| `RECURRING_MAX_CATCHUP` | `366` | Recurring engine safety cap (iterations per run) |
+| `PER_PAGE_DEFAULT` / `PER_PAGE_CHOICES` | `25` / `10,25,50,100` | Pagination default and allowed page sizes |
+| `TRANSACTIONS_PER_PAGE_DEFAULT` | `10` | Transactions list page size |
+| `FX_CACHE_TTL_SECONDS` | `86400` | Live FX cache lifetime |
+| `FX_API_URL` | `https://open.er-api.com/…` | Live FX rate endpoint (`{base}` placeholder) |
+| `FX_FETCH_TIMEOUT_SECONDS` | `5` | Live FX fetch timeout |
 | `SENTRY_DSN` | *(unset)* | Enables Sentry error tracking when set |
 | `PORT` | `5000` | Dev server port (`python run.py`) |
 
@@ -185,16 +206,18 @@ app/
   fx.py           optional live FX-rate refresh (cached)
   jobs.py         automatic backup + rotation
   templates/      shared views: base.html, error.html
-  static/         style.css (light/dark), app.js (theme, validation, bulk select)
+  static/         style.css (light/dark), app.js (theme + fullscreen toggles, INR formatting, validation, bulk select, idle countdown)
   modules/
     auth/         login (+ TOTP step), roles, profile, user admin, audit log
     dashboard/    home: summaries, 6-month trend, top spending, budget alerts
-    transactions/ list/filter/sort/paginate, CRUD, splits, bulk ops, trash, CSV import/export
+    transactions/ list/filter/sort/paginate, CRUD, splits, receipts, bulk ops, trash, CSV import/export
     recurring/    scheduled transactions (daily/weekly/monthly/yearly)
     categories/   category management
     budgets/      monthly limits + status
-    reports/      daily/monthly charts, budget variance, forecast, PDF export
+    reports/      daily/monthly charts, budget variance, forecast, PDF + Excel export
     data/         bulk CSV import, CSV restore, SQL-dump (+ legacy JSON) backup/restore
+    bank_import/  bank CSV upload → column map → preview → import (+ saved mapping templates, admin-only writes)
+    import_templates/ CSV encoding detection + saved bank-import mapping templates
     api/          JSON endpoints (/api + /api/v1, no views)
 expenses.sql      schema reference
 seed_demo.py      demo data generator

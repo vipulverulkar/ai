@@ -1,5 +1,5 @@
 """Recurring transaction routes (Controller layer)."""
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from flask import flash, g, redirect, render_template, request, session, url_for
 
@@ -76,12 +76,29 @@ def _save(db):
         flash(oerr, "error")
         return redirect(url_for("recurring.index"))
     note = (request.form.get("note", "") or "").strip()[:200]
+    # A start in the distant past must not backfill hundreds of transactions
+    # on the next dashboard load (run_due bursts up to MAX_CATCHUP_ITERATIONS
+    # rows at once). Recent-past starts still backfill normally (e.g. a
+    # quarterly schedule created mid-quarter); only ancient starts — over a
+    # year old — begin generating from today, keeping start_date as anchor.
+    # Same policy as resuming an overdue schedule below.
+    try:
+        _start_d = datetime.strptime(start, "%Y-%m-%d").date()
+        _ancient = (date.today() - _start_d).days > 366
+    except (ValueError, TypeError):
+        _ancient = False
     models.create(db, amount, ttype, cat["id"], note, frequency, start,
-                  owner_id, currency=code, orig_amount=orig, end_date=end)
+                  owner_id, currency=code, orig_amount=orig, end_date=end,
+                  first_run=date.today().isoformat() if _ancient else None)
     log_action(db, session.get("user"), "create_recurrence", "recurring_transactions", None,
                f"{frequency} {ttype}")
     span = f"{start} → {end}" if end else f"{start} → no end"
-    flash(f"Recurring {ttype} scheduled ({frequency}, {span}).", "success")
+    if _ancient:
+        flash(f"Recurring {ttype} scheduled ({frequency}, {span}). "
+              f"Start was over a year ago — first run begins today (no backfill).",
+              "success")
+    else:
+        flash(f"Recurring {ttype} scheduled ({frequency}, {span}).", "success")
     return redirect(url_for("recurring.index"))
 
 

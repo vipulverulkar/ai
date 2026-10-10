@@ -14,8 +14,11 @@ import csv
 import io
 import json
 
-from flask import current_app, flash, redirect, render_template, request, session, url_for
+from flask import current_app, flash, g, redirect, render_template, request, session, url_for
 
+from ...config import BANK_IMPORT_MAX_BYTES as MAX_BANK_CSV_BYTES
+from ...config import BANK_IMPORT_PREVIEW_ROWS as PREVIEW_ROWS
+from ...config import BANK_IMPORT_ROW_LIMIT as BANK_ROW_LIMIT
 from ...db import get_db
 from ..auth.controllers import admin_required
 from ..categories import models as category_models
@@ -23,11 +26,40 @@ from .. import import_templates as templates_mod
 from ..transactions import models as tx_models
 from . import bp
 
-MAX_BANK_CSV_BYTES = 2 * 1024 * 1024  # staged upload cap (DoS guard)
-BANK_ROW_LIMIT = 2000
-PREVIEW_ROWS = 8
 STAGE_KEY = "bank_csv_text"
 STAGE_NAME_KEY = "bank_csv_name"
+
+
+def _max_bytes():
+    """Max staged bank CSV size in bytes (runtime config, env default)."""
+    try:
+        return int(current_app.config.get("BANK_IMPORT_MAX_BYTES", MAX_BANK_CSV_BYTES)
+                   or MAX_BANK_CSV_BYTES)
+    except (RuntimeError, ValueError, TypeError):
+        return MAX_BANK_CSV_BYTES
+
+
+def _mb_label():
+    from ...helpers import format_bytes
+    return format_bytes(_max_bytes())
+
+
+def _row_limit():
+    """Max bank CSV rows per import (runtime config, env default)."""
+    try:
+        return int(current_app.config.get("BANK_IMPORT_ROW_LIMIT", BANK_ROW_LIMIT)
+                   or BANK_ROW_LIMIT)
+    except (RuntimeError, ValueError, TypeError):
+        return BANK_ROW_LIMIT
+
+
+def _preview_rows():
+    """Preview sample size (runtime config, env default)."""
+    try:
+        return int(current_app.config.get("BANK_IMPORT_PREVIEW_ROWS", PREVIEW_ROWS)
+                   or PREVIEW_ROWS)
+    except (RuntimeError, ValueError, TypeError):
+        return PREVIEW_ROWS
 
 
 def _can_stage():
@@ -44,9 +76,9 @@ def _read_upload(file_storage):
     """Read + decode an uploaded CSV, enforcing the size cap."""
     if not file_storage or not (file_storage.filename or "").lower().endswith(".csv"):
         return None, "Please upload a valid .csv file."
-    raw = file_storage.read(MAX_BANK_CSV_BYTES + 1)
-    if len(raw) > MAX_BANK_CSV_BYTES:
-        return None, "CSV file is too large (max 2 MB). Split it and try again."
+    raw = file_storage.read(_max_bytes() + 1)
+    if len(raw) > _max_bytes():
+        return None, f"CSV file is too large (max {_mb_label()}). Split it and try again."
     if not raw.strip():
         return None, "CSV file is empty."
     try:
@@ -85,11 +117,15 @@ def _staged_text():
 @bp.route("/")
 def index():
     db = get_db()
+    if not g.get("is_admin", False):
+        flash("That action requires an admin account.", "error")
+        return redirect(url_for("dashboard.index"))
     templates = db.execute("SELECT * FROM import_templates ORDER BY name").fetchall()
     staged_name = session.get(STAGE_NAME_KEY)
     staged = bool(session.get(STAGE_KEY))
     return render_template("bank_import/index.html", templates=templates,
-                           staged_name=staged_name, staged=staged)
+                           staged_name=staged_name, staged=staged,
+                           max_label=_mb_label())
 
 
 @bp.route("/map", methods=["POST"])
@@ -108,8 +144,8 @@ def map_columns():
         if err:
             flash(err, "error")
             return redirect(url_for("bank_import.index"))
-        if len(rows) > BANK_ROW_LIMIT:
-            flash(f"Too many rows ({len(rows)}, max {BANK_ROW_LIMIT}). "
+        if len(rows) > _row_limit():
+            flash(f"Too many rows ({len(rows)}, max {_row_limit()}). "
                   "Split the file and try again.", "error")
             return redirect(url_for("bank_import.index"))
         if _can_stage():
@@ -162,8 +198,11 @@ def _resolve_preview_inputs(form):
         text, err = _read_upload(f)
         if err:
             return None, None, None, err
-        session[STAGE_KEY] = text
-        session[STAGE_NAME_KEY] = f.filename
+        if _can_stage():
+            session[STAGE_KEY] = text
+            session[STAGE_NAME_KEY] = f.filename
+        # Cookie sessions can't hold the CSV (see _can_stage): `text` is
+        # used in-memory for this step and the next step re-attaches it.
     if not text:
         return None, None, None, "Upload a CSV file first."
     headers, rows, err = _parse_rows(text)
@@ -250,7 +289,7 @@ def preview():
         flash("Chosen default category no longer exists.", "error")
         return redirect(url_for("bank_import.index"))
     preview_rows, errors = [], []
-    for i, row in enumerate(rows[:PREVIEW_ROWS]):
+    for i, row in enumerate(rows[:_preview_rows()]):
         try:
             parsed = _preview_row(db, row, mapping, default_cat, {**cats, **cats_by_id})
         except Exception as e:  # noqa: BLE001 — one bad row must not 500 the preview
@@ -285,8 +324,9 @@ def import_bank():
         if err:
             flash(err, "error")
             return redirect(url_for("bank_import.index"))
-        session[STAGE_KEY] = text
-        session[STAGE_NAME_KEY] = f.filename
+        if _can_stage():
+            session[STAGE_KEY] = text
+            session[STAGE_NAME_KEY] = f.filename
     if not text:
         flash("Upload a CSV file first.", "error")
         return redirect(url_for("bank_import.index"))
@@ -313,16 +353,20 @@ def import_bank():
     inserted = skipped = 0
     skip_reasons = []
     me = tx_models.recorded_by(db, session.get("user", ""))
+    seen_this_run = set()  # fingerprints created by this upload (repeats
+    # within one statement, e.g. two identical subscriptions, are legit)
     for i, row in enumerate(rows, start=1):
-        if i > BANK_ROW_LIMIT:
+        if i > _row_limit():
             skipped += len(rows) - (i - 1)
-            skip_reasons.append(f"stopped at row limit ({BANK_ROW_LIMIT})")
+            skip_reasons.append(f"stopped at row limit ({_row_limit()})")
             break
         try:
-            if _process_bank_row(db, row, mapping, cats, me, default_cat):
-                inserted += 1
-            else:
+            fp = _process_bank_row(db, row, mapping, cats, me, default_cat,
+                                   seen_this_run)
+            if fp is False:
                 skipped += 1
+            else:
+                inserted += 1
         except Exception as e:  # noqa: BLE001 — per-row failure must not abort the run
             try:
                 db.rollback()
@@ -380,16 +424,23 @@ def save_template():
 @admin_required
 def delete_template(template_id):
     db = get_db()
-    db.execute("DELETE FROM import_templates WHERE id=?", (template_id,))
+    cur = db.execute("DELETE FROM import_templates WHERE id=?", (template_id,))
     db.commit()
-    flash("Template deleted.", "success")
+    if cur.rowcount:
+        flash("Template deleted.", "success")
+    else:
+        flash("Template not found.", "error")
     return redirect(url_for("bank_import.index"))
 
 
-def _process_bank_row(db, row, mapping, cats, user_id, default_cat_id=None):
+def _process_bank_row(db, row, mapping, cats, user_id, default_cat_id=None,
+                      seen_this_run=None):
     """Process a single bank CSV row and create the transaction.
 
-    Returns True on success (raises on skip with the reason).
+    Returns the row fingerprint on success, False when skipped as an exact
+    duplicate of a pre-existing transaction (re-upload protection; repeats
+    within the same upload are still imported). Raises on other skips with
+    the reason.
     """
     mapped = templates_mod.apply_mapping(row, mapping)
     if mapping.get("debit") or mapping.get("credit"):
@@ -435,6 +486,20 @@ def _process_bank_row(db, row, mapping, cats, user_id, default_cat_id=None):
         db, amount_str, ttype, BankCat["id"], date_str, note)
     if err:
         raise ValueError(err)
+    fp = (validated_date, amount_cents, ttype, validated_cat["id"], note,
+          user_id)
+    if seen_this_run is not None and fp not in seen_this_run:
+        dup = db.execute(
+            "SELECT id FROM transactions WHERE date=? AND amount=? AND type=?"
+            " AND category_id=? AND note=?"
+            " AND COALESCE(user_id, -1)=COALESCE(?, -1)"
+            " AND deleted_at IS NULL LIMIT 1",
+            (validated_date, amount_cents, ttype, validated_cat["id"],
+             note, user_id)).fetchone()
+        if dup:
+            return False
     tx_models.create(db, amount_cents, ttype, validated_cat["id"],
                      validated_date, note, user_id)
-    return True
+    if seen_this_run is not None:
+        seen_this_run.add(fp)
+    return fp

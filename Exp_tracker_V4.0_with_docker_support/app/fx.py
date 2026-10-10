@@ -10,16 +10,18 @@ import time
 from datetime import datetime, timezone
 from urllib.request import urlopen
 
-CACHE_TTL = 86400  # 24h
-API_URL = "https://open.er-api.com/v6/latest/{base}"
+from .config import FX_API_URL as API_URL
+from .config import FX_CACHE_TTL_SECONDS as CACHE_TTL
+from .config import FX_FETCH_TIMEOUT_SECONDS as FETCH_TIMEOUT
 
 
-def _read_cache(path, base):
+def _read_cache(path, base, ttl=None):
+    ttl = CACHE_TTL if ttl is None else ttl
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
         if (data.get("base") == base
-                and time.time() - float(data.get("ts", 0)) < CACHE_TTL
+                and time.time() - float(data.get("ts", 0)) < ttl
                 and isinstance(data.get("rates"), dict)):
             return data["rates"]
     except (OSError, ValueError, TypeError):
@@ -35,8 +37,10 @@ def _write_cache(path, base, rates):
         pass
 
 
-def _fetch(base, timeout=5):
-    with urlopen(API_URL.format(base=base), timeout=timeout) as resp:
+def _fetch(base, timeout=None, api_url=None):
+    timeout = FETCH_TIMEOUT if timeout is None else timeout
+    api_url = API_URL if api_url is None else api_url
+    with urlopen(api_url.format(base=base), timeout=timeout) as resp:
         data = json.loads(resp.read().decode("utf-8"))
     rates = data.get("rates") or {}
     # The API reports how much of each currency equals 1 unit of the base;
@@ -56,11 +60,14 @@ def refresh_rates(config, force=False):
         return None
     base = (config.get("BASE_CURRENCY") or "INR").upper()
     cache = config.get("FX_CACHE_FILE")
-    rates = None if force else _read_cache(cache, base)
+    ttl = config.get("FX_CACHE_TTL_SECONDS", CACHE_TTL) or CACHE_TTL
+    rates = None if force else _read_cache(cache, base, ttl)
     source = "cache"
     if rates is None:
         try:
-            rates = _fetch(base)
+            rates = _fetch(base, config.get("FX_FETCH_TIMEOUT_SECONDS",
+                                            FETCH_TIMEOUT),
+                           config.get("FX_API_URL", API_URL))
             source = "api"
         except Exception as e:  # noqa: BLE001 — offline is fine
             import logging

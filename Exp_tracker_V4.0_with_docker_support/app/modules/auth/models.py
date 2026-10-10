@@ -2,17 +2,14 @@
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from ...config import DEFAULT_PASSWORD, DEFAULT_USERNAME
+from ...config import MAX_TIMEOUT_MINUTES as MAX_TIMEOUT_MINUTES
+from ...config import MAX_USERNAME_LEN as MAX_USERNAME_LEN
+from ...config import MIN_PASSWORD_LEN as MIN_PASSWORD_LEN
+from ...config import MIN_TIMEOUT_MINUTES as MIN_TIMEOUT_MINUTES
+from ...config import MIN_USERNAME_LEN as MIN_USERNAME_LEN
 from ...db import DB_ERRORS, INTEGRITY_ERRORS
 from ...helpers import from_cents
 
-# Bounds for the per-user idle-timeout override (minutes).
-MIN_TIMEOUT_MINUTES = 1
-MAX_TIMEOUT_MINUTES = 1440
-
-# New-user validation.
-MIN_USERNAME_LEN = 3
-MAX_USERNAME_LEN = 32
-MIN_PASSWORD_LEN = 8
 ROLES = ("admin", "viewer")
 
 try:

@@ -240,14 +240,19 @@ def import_data():
             flash(f"{label}: could not read CSV file.", "error")
             continue
         if label == "Transactions":
-            imported, skipped = models.import_transactions(
+            imported, skipped, truncated = models.import_transactions(
                 db, text,
                 transaction_models.recorded_by(db, session.get("user", "")))
         else:
             imported, skipped = func(db, text)
+            truncated = False
         msg = f"{label}: imported {imported} row(s)"
         if skipped:
             msg += f", {skipped} skipped"
+        if truncated:
+            msg += (f" — file held more than "
+                    f"{transaction_models.IMPORT_ROW_LIMIT} rows; only the first "
+                    f"{transaction_models.IMPORT_ROW_LIMIT} were processed")
         flash(msg + ".", "success" if imported else "error")
         log_action(db, session.get("user"), "csv_import", None, None,
                    f"{label}: {imported} imported, {skipped} skipped")

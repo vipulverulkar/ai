@@ -55,6 +55,36 @@
   });
   syncBtn();
 
+  // Fullscreen toggle — the only way to hide the browser's own address
+  // bar (Esc exits). Browsers always show the URL in normal mode.
+  function syncFsBtn() {
+    var btn = document.getElementById('fullscreen-toggle');
+    if (!btn) return;
+    var on = !!(document.fullscreenElement || document.webkitFullscreenElement);
+    btn.textContent = on ? '⛶' : '⛶';
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    btn.title = on ? 'Exit fullscreen (Esc)' : 'Fullscreen — hides the browser address bar (Esc to exit)';
+  }
+  document.addEventListener('click', function (e) {
+    if (e.target && e.target.id === 'fullscreen-toggle') {
+      var el = document.documentElement;
+      var active = !!(document.fullscreenElement || document.webkitFullscreenElement);
+      try {
+        if (!active) {
+          if (el.requestFullscreen) el.requestFullscreen();
+          else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+        } else {
+          if (document.exitFullscreen) document.exitFullscreen();
+          else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+        }
+      } catch (err) {}
+    }
+  });
+  ['fullscreenchange', 'webkitfullscreenchange'].forEach(function (ev) {
+    document.addEventListener(ev, syncFsBtn);
+  });
+  syncFsBtn();
+
   // Auto-switch category dropdown based on income/expense radio
   window.bindTypeCategory = function (formId) {
     var form = document.getElementById(formId);

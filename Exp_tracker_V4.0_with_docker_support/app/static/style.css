@@ -71,6 +71,10 @@ body {
 .links a { color: #cbd5e1; text-decoration: none; font-size: 13.5px; font-weight: 600;
   padding: 7px 11px; border-radius: 9px; transition: all .18s ease; white-space: nowrap; }
 .links a:hover { color: #fff; background: rgba(255,255,255,.1); }
+.links .link-btn { color: #cbd5e1; font-size: 13.5px; font-weight: 600;
+  padding: 7px 11px; border-radius: 9px; transition: all .18s ease; white-space: nowrap;
+  background: none; border: none; cursor: pointer; font-family: inherit; }
+.links .link-btn:hover { color: #fff; background: rgba(255,255,255,.1); }
 .links a.active { color: #fff; background: linear-gradient(135deg, var(--brand), var(--brand2));
   box-shadow: 0 3px 10px rgba(99,102,241,.5); }
 /* Data submenu: Backup & restore · Bank import · Audit log.

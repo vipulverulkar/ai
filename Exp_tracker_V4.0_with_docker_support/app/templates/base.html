@@ -48,7 +48,6 @@
             <div class="menu-inner">
             <a href="{{ url_for('categories.index') }}" class="{% if request.blueprint == 'categories' %}active{% endif %}">🏷️ Categories</a>
             {% if is_admin %}<a href="{{ url_for('auth.users') }}" class="{% if request.endpoint in ('auth.users', 'auth.user_profile', 'auth.reset_password', 'auth.delete_user') %}active{% endif %}">👥 Users</a>{% endif %}
-            {% if is_admin %}<a href="{{ url_for('auth.users') }}#add-user">➕ Add user</a>{% endif %}
             <a href="{{ url_for('auth.profile') }}" class="{% if request.endpoint == 'auth.profile' %}active{% endif %}">👤 Profile</a>
             </div>
           </div>

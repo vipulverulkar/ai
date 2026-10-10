@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Categories – Expense Tracker{% endblock %}
+{% macro cat_url(p) %}{{ url_for('categories.index', type=f_type, savings=f_savings, usage=f_usage, q=f_search, per_page=per_page, page=p) }}{% endmacro %}
 {% block content %}
 
 <div class="page-head">
@@ -38,6 +39,37 @@
       <span class="spacer"></span>
       <span class="count-pill">{{ total }}</span>
     </div>
+    <form method="get" action="{{ url_for('categories.index') }}" class="filters">
+      <input type="hidden" name="per_page" value="{{ per_page }}">
+      <div class="row">
+        <label>Type
+          <select name="type">
+            <option value="all" {% if f_type=='all' %}selected{% endif %}>All</option>
+            <option value="income" {% if f_type=='income' %}selected{% endif %}>Income</option>
+            <option value="expense" {% if f_type=='expense' %}selected{% endif %}>Expense</option>
+          </select>
+        </label>
+        <label>Savings
+          <select name="savings">
+            <option value="all" {% if f_savings=='all' %}selected{% endif %}>All</option>
+            <option value="savings" {% if f_savings=='savings' %}selected{% endif %}>🏦 Savings only</option>
+            <option value="regular" {% if f_savings=='regular' %}selected{% endif %}>Regular only</option>
+          </select>
+        </label>
+        <label>Usage
+          <select name="usage">
+            <option value="all" {% if f_usage=='all' %}selected{% endif %}>All</option>
+            <option value="used" {% if f_usage=='used' %}selected{% endif %}>Used</option>
+            <option value="unused" {% if f_usage=='unused' %}selected{% endif %}>Unused</option>
+          </select>
+        </label>
+        <label>Search<input type="text" name="q" value="{{ f_search }}" placeholder="Category name"></label>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <button class="btn primary" type="submit" style="flex:1">Apply filters</button>
+        <a class="btn ghost" href="{{ url_for('categories.index') }}">Clear</a>
+      </div>
+    </form>
     <div class="table-wrap"><table>
       <thead><tr><th>Name</th><th>Type</th><th>Used</th><th>Actions</th></tr></thead>
       <tbody>
@@ -62,13 +94,17 @@
           </td>
         </tr>
       {% else %}
-        <tr><td colspan="4" class="empty"><span class="big">🏷️</span>No categories yet.</td></tr>
+        <tr><td colspan="4" class="empty"><span class="big">🏷️</span>{% if f_type != 'all' or f_savings != 'all' or f_usage != 'all' or f_search %}No categories match these filters.<br><a class="btn ghost" href="{{ url_for('categories.index') }}">Clear filters</a>{% else %}No categories yet.{% endif %}</td></tr>
       {% endfor %}
       </tbody>
     </table></div>
     <div class="pager">
       <span class="pager-info">Showing {{ start }}–{{ end }} of {{ total }}</span>
       <form method="get" action="{{ url_for('categories.index') }}" class="per-page">
+        <input type="hidden" name="type" value="{{ f_type }}">
+        <input type="hidden" name="savings" value="{{ f_savings }}">
+        <input type="hidden" name="usage" value="{{ f_usage }}">
+        <input type="hidden" name="q" value="{{ f_search }}">
         <label>Per page
           <select name="per_page" onchange="this.form.submit()">
             {% for n in [10, 25, 50, 100] %}
@@ -79,17 +115,17 @@
       </form>
       <div class="pager-links">
         {% if page > 1 %}
-        <a class="btn small" href="{{ url_for('categories.index', page=page - 1, per_page=per_page) }}">← Prev</a>
+        <a class="btn small" href="{{ cat_url(page - 1) }}">← Prev</a>
         {% endif %}
         {% for p in pages %}
           {% if p %}
-          <a class="btn small {% if p == page %}primary{% endif %}" href="{{ url_for('categories.index', page=p, per_page=per_page) }}">{{ p }}</a>
+          <a class="btn small {% if p == page %}primary{% endif %}" href="{{ cat_url(p) }}">{{ p }}</a>
           {% else %}
           <span class="ellipsis">…</span>
           {% endif %}
         {% endfor %}
         {% if page < total_pages %}
-        <a class="btn small" href="{{ url_for('categories.index', page=page + 1, per_page=per_page) }}">Next →</a>
+        <a class="btn small" href="{{ cat_url(page + 1) }}">Next →</a>
         {% endif %}
       </div>
     </div>

@@ -60,17 +60,17 @@
     </form>
     <div class="pager-links">
       {% if page > 1 %}
-      <a class="btn small" href="{{ url_for('transactions.trash', page=page - 1, per_page=per_page) }}">← Prev</a>
+      <a class="btn small" href="{{ url_for('transactions.trash', page=page - 1 if page - 1 != 1 else None, per_page=per_page if per_page != 25 else None) }}">← Prev</a>
       {% endif %}
       {% for p in pages %}
         {% if p %}
-        <a class="btn small {% if p == page %}primary{% endif %}" href="{{ url_for('transactions.trash', page=p, per_page=per_page) }}">{{ p }}</a>
+        <a class="btn small {% if p == page %}primary{% endif %}" href="{{ url_for('transactions.trash', page=p if p != 1 else None, per_page=per_page if per_page != 25 else None) }}">{{ p }}</a>
         {% else %}
         <span class="ellipsis">…</span>
         {% endif %}
       {% endfor %}
       {% if page < total_pages %}
-      <a class="btn small" href="{{ url_for('transactions.trash', page=page + 1, per_page=per_page) }}">Next →</a>
+      <a class="btn small" href="{{ url_for('transactions.trash', page=page + 1 if page + 1 != 1 else None, per_page=per_page if per_page != 25 else None) }}">Next →</a>
       {% endif %}
     </div>
   </div>

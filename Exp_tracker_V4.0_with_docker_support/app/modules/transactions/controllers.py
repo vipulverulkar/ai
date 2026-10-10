@@ -83,6 +83,18 @@ def _filter_args(db):
 
 @bp.route("/transactions")
 def index():
+    # Canonical clean URL: drop default/empty filter params (and any leaked
+    # csrf_token) so the address bar shows /transactions instead of a long
+    # ?type=all&category=all&... query string. Deep links with real filters
+    # are preserved untouched.
+    from ...helpers import canonical_clean_args
+    cleaned = canonical_clean_args(request.args, {
+        "type": "all", "category": "all", "owner": "all", "month": "",
+        "q": "", "sort": "date", "order": "desc",
+        "per_page": "10", "page": "1",
+    })
+    if cleaned is not None:
+        return redirect(url_for("transactions.index", **cleaned))
     db = get_db()
     categories = category_models.all(db)
     owners = auth_models.all_users(db)
@@ -347,7 +359,10 @@ def delete(tx_id):
 
 @bp.route("/trash")
 def trash():
-    from ...helpers import page_window, paginate
+    from ...helpers import canonical_clean_args, page_window, paginate
+    cleaned = canonical_clean_args(request.args, {"page": "1", "per_page": "25"})
+    if cleaned is not None:
+        return redirect(url_for("transactions.trash", **cleaned))
     db = get_db()
     total = models.count_deleted(db)
     page, per_page, total_pages, offset = paginate(

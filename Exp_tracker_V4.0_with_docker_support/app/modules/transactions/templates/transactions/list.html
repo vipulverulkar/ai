@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Transactions – Expense Tracker{% endblock %}
-{% macro tx_url(p) %}{{ url_for('transactions.index', type=f_type, category=f_category, owner=f_owner, month=f_month, q=f_search, sort=sort, order=order, per_page=per_page, page=p) }}{% endmacro %}
+{% macro tx_url(p) %}{{ url_for('transactions.index', type=f_type if f_type != 'all' else None, category=f_category if f_category != 'all' else None, owner=f_owner if f_owner != 'all' else None, month=f_month or None, q=f_search or None, sort=sort if sort != 'date' else None, order=order if order != 'desc' else None, per_page=per_page if per_page != 10 else None, page=p if p != 1 else None) }}{% endmacro %}
 {% block content %}
 
 <div class="page-head">
@@ -10,7 +10,7 @@
   </div>
   <div class="head-actions">
     <a class="btn ghost" href="{{ url_for('transactions.trash') }}">🗑 Trash</a>
-    <a class="btn ghost" href="{{ url_for('transactions.export', type=f_type, category=f_category, owner=f_owner, month=f_month, q=f_search, sort=sort, order=order) }}">⬇ Export CSV</a>
+    <a class="btn ghost" href="{{ url_for('transactions.export', type=f_type if f_type != 'all' else None, category=f_category if f_category != 'all' else None, owner=f_owner if f_owner != 'all' else None, month=f_month or None, q=f_search or None, sort=sort if sort != 'date' else None, order=order if order != 'desc' else None) }}">⬇ Export CSV</a>
     <a class="btn primary" href="{{ url_for('dashboard.index') }}#add">＋ Add</a>
   </div>
 </div>
@@ -21,7 +21,6 @@
     <div><h2>Filters</h2><p>Slice the list below</p></div>
   </div>
   <form method="get" action="{{ url_for('transactions.index') }}" class="filters">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="per_page" value="{{ per_page }}">
     <input type="hidden" name="sort" value="{{ sort }}">
     <input type="hidden" name="order" value="{{ order }}">
@@ -115,9 +114,9 @@
     <span class="total-chip">Net {{ currency }}{{ (filt_net|money) }}</span>
     <span style="flex:1"></span>
     <span class="total-chip">Sort:
-      <a href="{{ url_for('transactions.index', type=f_type, category=f_category, owner=f_owner, month=f_month, q=f_search, per_page=per_page, sort='date', order='desc' if not (sort=='date' and order=='desc') else 'asc') }}">Date {% if sort=='date' %}{{ '↓' if order=='desc' else '↑' }}{% endif %}</a> ·
-      <a href="{{ url_for('transactions.index', type=f_type, category=f_category, owner=f_owner, month=f_month, q=f_search, per_page=per_page, sort='amount', order='desc' if not (sort=='amount' and order=='desc') else 'asc') }}">Amount {% if sort=='amount' %}{{ '↓' if order=='desc' else '↑' }}{% endif %}</a> ·
-      <a href="{{ url_for('transactions.index', type=f_type, category=f_category, owner=f_owner, month=f_month, q=f_search, per_page=per_page, sort='category', order='asc' if not (sort=='category' and order=='asc') else 'desc') }}">Category {% if sort=='category' %}{{ '↓' if order=='desc' else '↑' }}{% endif %}</a>
+      <a href="{{ url_for('transactions.index', type=f_type if f_type != 'all' else None, category=f_category if f_category != 'all' else None, owner=f_owner if f_owner != 'all' else None, month=f_month or None, q=f_search or None, per_page=per_page if per_page != 10 else None, sort='date', order='desc' if not (sort=='date' and order=='desc') else 'asc') }}">Date {% if sort=='date' %}{{ '↓' if order=='desc' else '↑' }}{% endif %}</a> ·
+      <a href="{{ url_for('transactions.index', type=f_type if f_type != 'all' else None, category=f_category if f_category != 'all' else None, owner=f_owner if f_owner != 'all' else None, month=f_month or None, q=f_search or None, per_page=per_page if per_page != 10 else None, sort='amount', order='desc' if not (sort=='amount' and order=='desc') else 'asc') }}">Amount {% if sort=='amount' %}{{ '↓' if order=='desc' else '↑' }}{% endif %}</a> ·
+      <a href="{{ url_for('transactions.index', type=f_type if f_type != 'all' else None, category=f_category if f_category != 'all' else None, owner=f_owner if f_owner != 'all' else None, month=f_month or None, q=f_search or None, per_page=per_page if per_page != 10 else None, sort='category', order='asc' if not (sort=='category' and order=='asc') else 'desc') }}">Category {% if sort=='category' %}{{ '↓' if order=='desc' else '↑' }}{% endif %}</a>
     </span>
   </div>
   <div class="table-wrap">

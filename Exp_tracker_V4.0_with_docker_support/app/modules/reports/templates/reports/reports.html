@@ -9,12 +9,12 @@
     <p class="sub">Summaries, budgets &amp; forecast · {{ period_label }}</p>
   </div>
   <div class="tabs">
-    <a class="btn {% if view=='daily' %}primary{% else %}ghost{% endif %}" href="{{ url_for('reports.index', view='daily', month=month if month is defined else '') }}">📅 Daily</a>
-    <a class="btn {% if view=='monthly' %}primary{% else %}ghost{% endif %}" href="{{ url_for('reports.index', view='monthly', year=year if year is defined else '') }}">🗓️ Monthly</a>
-    <a class="btn {% if view=='budgets' %}primary{% else %}ghost{% endif %}" href="{{ url_for('reports.index', view='budgets', month=month if month is defined else '') }}">🎯 Budgets</a>
+    <a class="btn {% if view=='daily' %}primary{% else %}ghost{% endif %}" href="{{ url_for('reports.index', view=None, month=month if month is defined and view == 'daily' else None) }}">📅 Daily</a>
+    <a class="btn {% if view=='monthly' %}primary{% else %}ghost{% endif %}" href="{{ url_for('reports.index', view='monthly', year=year if year is defined else None) }}">🗓️ Monthly</a>
+    <a class="btn {% if view=='budgets' %}primary{% else %}ghost{% endif %}" href="{{ url_for('reports.index', view='budgets', month=month if month is defined and view == 'budgets' else None) }}">🎯 Budgets</a>
     <a class="btn {% if view=='forecast' %}primary{% else %}ghost{% endif %}" href="{{ url_for('reports.index', view='forecast') }}">🔮 Forecast</a>
-    <a class="btn ghost" href="{{ url_for('reports.export_pdf', view=view if view in ('daily','monthly') else 'daily', month=month if (view=='daily' and month is defined) else '', year=year if (view=='monthly' and year is defined) else '') }}">⬇ PDF</a>
-    <a class="btn ghost" href="{{ url_for('reports.export_xlsx', view=view if view in ('daily','monthly') else 'daily', month=month if (view=='daily' and month is defined) else '', year=year if (view=='monthly' and year is defined) else '') }}">⬇ Excel</a>
+    <a class="btn ghost" href="{{ url_for('reports.export_pdf', view=view if view in ('daily','monthly') else 'daily', month=month if (view=='daily' and month is defined) else None, year=year if (view=='monthly' and year is defined) else None) }}">⬇ PDF</a>
+    <a class="btn ghost" href="{{ url_for('reports.export_xlsx', view=view if view in ('daily','monthly') else 'daily', month=month if (view=='daily' and month is defined) else None, year=year if (view=='monthly' and year is defined) else None) }}">⬇ Excel</a>
     <a class="btn ghost" href="{{ url_for('transactions.export') }}">⬇ CSV</a>
   </div>
 </div>

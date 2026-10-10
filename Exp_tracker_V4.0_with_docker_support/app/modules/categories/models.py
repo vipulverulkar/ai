@@ -10,9 +10,55 @@ def count(db):
 
 
 def page(db, per_page, offset):
+    return page_filtered(db, "", [], per_page, offset)
+
+
+def filter_query(f_type="all", f_savings="all", f_usage="all", f_search=""):
+    """Build WHERE/args for the categories list from filter params.
+
+    f_type: all/income/expense; f_savings: all/savings/regular;
+    f_usage: all/used/unused; f_search: substring matched against name.
+    Invalid values fall back to 'all'/''. Returns (f_type, f_savings,
+    f_usage, f_search, where, args) with sanitized filters.
+    """
+    if f_type not in ("income", "expense"):
+        f_type = "all"
+    if f_savings not in ("savings", "regular"):
+        f_savings = "all"
+    if f_usage not in ("used", "unused"):
+        f_usage = "all"
+    f_search = (f_search or "").strip()
+    where = "WHERE 1=1"
+    args = []
+    if f_type != "all":
+        where += " AND c.type = ?"
+        args.append(f_type)
+    if f_savings == "savings":
+        where += " AND c.is_savings = 1"
+    elif f_savings == "regular":
+        where += " AND (c.is_savings IS NULL OR c.is_savings = 0)"
+    if f_search:
+        where += " AND c.name LIKE ?"
+        args.append(f"%{f_search}%")
+    if f_usage == "used":
+        where += (" AND EXISTS (SELECT 1 FROM transactions t"
+                  " WHERE t.category_id = c.id)")
+    elif f_usage == "unused":
+        where += (" AND NOT EXISTS (SELECT 1 FROM transactions t"
+                  " WHERE t.category_id = c.id)")
+    return f_type, f_savings, f_usage, f_search, where, args
+
+
+def count_filtered(db, where, args):
     return db.execute(
-        "SELECT * FROM categories ORDER BY type, name LIMIT ? OFFSET ?",
-        (per_page, offset)).fetchall()
+        f"SELECT COUNT(*) FROM categories c {where}", args).fetchone()[0]
+
+
+def page_filtered(db, where, args, per_page, offset):
+    return db.execute(
+        f"SELECT * FROM categories c {where} ORDER BY c.type, c.name"
+        " LIMIT ? OFFSET ?",
+        (*args, per_page, offset)).fetchall()
 
 
 def by_type(db, ctype):

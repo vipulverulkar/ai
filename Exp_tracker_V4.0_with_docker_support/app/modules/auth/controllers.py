@@ -326,6 +326,10 @@ def delete_user(user_id):
 @bp.route("/audit")
 @admin_required
 def audit():
+    from ...helpers import canonical_clean_args
+    cleaned = canonical_clean_args(request.args, {"page": "1", "per_page": "25"})
+    if cleaned is not None:
+        return redirect(url_for("auth.audit", **cleaned))
     db = get_db()
     total = db.execute("SELECT COUNT(*) FROM audit_logs").fetchone()[0]
     page, per_page, total_pages, offset = paginate(

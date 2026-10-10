@@ -28,12 +28,19 @@ def index():
         except INTEGRITY_ERRORS:
             flash(f"Category '{name}' already exists.", "error")
         return redirect(url_for("categories.index"))
-    total = models.count(db)
+    f_type, f_savings, f_usage, f_search, where, args = models.filter_query(
+        request.args.get("type", "all"),
+        request.args.get("savings", "all"),
+        request.args.get("usage", "all"),
+        request.args.get("q", ""))
+    total = models.count_filtered(db, where, args)
     page, per_page, total_pages, offset = paginate(
         total, request.args.get("page"), request.args.get("per_page"))
     return render_template("categories/list.html",
-                           categories=models.page(db, per_page, offset),
+                           categories=models.page_filtered(db, where, args, per_page, offset),
                            usage=models.usage_counts(db),
+                           f_type=f_type, f_savings=f_savings,
+                           f_usage=f_usage, f_search=f_search,
                            page=page, per_page=per_page, total=total,
                            total_pages=total_pages,
                            start=offset + 1 if total else 0,

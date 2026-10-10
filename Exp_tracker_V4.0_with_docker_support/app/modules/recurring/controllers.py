@@ -16,6 +16,11 @@ FREQUENCIES = models.FREQUENCIES
 
 @bp.route("/recurring", methods=["GET", "POST"])
 def index():
+    if request.method == "GET":
+        from ...helpers import canonical_clean_args
+        cleaned = canonical_clean_args(request.args, {"page": "1", "per_page": "25"})
+        if cleaned is not None:
+            return redirect(url_for("recurring.index", **cleaned))
     db = get_db()
     if request.method == "POST":
         if not g.get("is_admin", False):

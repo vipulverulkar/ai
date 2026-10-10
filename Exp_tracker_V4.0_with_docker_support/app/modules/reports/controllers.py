@@ -11,6 +11,15 @@ from . import bp, models
 
 @bp.route("/reports")
 def index():
+    from ...helpers import canonical_clean_args
+    cleaned = canonical_clean_args(request.args, {
+        "view": "daily", "month": "", "year": "",
+    })
+    if cleaned is not None:
+        # Keep at least the view when it is non-default so the redirect
+        # target still renders the same tab; canonical_clean_args already
+        # dropped view=daily clutter.
+        return redirect(url_for("reports.index", **cleaned))
     db = get_db()
     view = request.args.get("view", "daily")
     today = date.today()

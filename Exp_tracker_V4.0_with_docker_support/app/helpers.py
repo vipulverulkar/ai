@@ -107,3 +107,42 @@ def page_window(page, total_pages):
         elif out[-1] is not None:
             out.append(None)
     return out
+
+
+def canonical_clean_args(query, defaults):
+    """Return a cleaned copy of a query mapping with clutter removed.
+
+    Drops keys whose value equals the default in `defaults`, drops empty
+    values for keys defaulting to "", and always drops `csrf_token`
+    (a GET filter form must never leak the token into the URL/history).
+    Unknown keys are preserved unchanged.
+
+    `query` is a Flask MultiDict (e.g. request.args). Returns a plain dict
+    of the params worth keeping, or None if nothing would change.
+    """
+    cleaned = {}
+    changed = False
+    for key in query.keys():
+        # request.args.keys() may repeat; keep first occurrence only.
+        if key in cleaned:
+            changed = True
+            continue
+        value = query.get(key, "")
+        if key == "csrf_token":
+            changed = True
+            continue
+        if key in defaults:
+            default = defaults[key]
+            if value == default or (default == "" and value == ""):
+                changed = True
+                continue
+            # Treat explicit page=1 / per_page=default as clutter too.
+            if value == str(default):
+                changed = True
+                continue
+        cleaned[key] = value
+    # Also flag the case where a default key is simply absent vs present —
+    # only redirect when we actually dropped something.
+    if not changed:
+        return None
+    return cleaned
